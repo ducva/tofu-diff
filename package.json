@@ -1,0 +1,10 @@
+{
+  "name": "tofu-diff-okf-tooling",
+  "private": true,
+  "scripts": {
+    "okf:validate": "node scripts/validate-okf.mjs"
+  },
+  "devDependencies": {
+    "yaml": "^2.9.0"
+  }
+}
