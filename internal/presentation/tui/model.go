@@ -10,7 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ducva/tofu-diff/plan"
+	plan "github.com/ducva/tofu-diff/internal/plan/domain"
+	"github.com/ducva/tofu-diff/internal/presentation/valuefmt"
 )
 
 var (
@@ -147,11 +148,11 @@ func (m *Model) rightWidth() int {
 	return m.width - m.leftWidth()
 }
 
-func New(pf plan.PlanFile) Model {
+func New(pf plan.Plan) Model {
 	return NewWithDiffOnly(pf, true)
 }
 
-func NewWithDiffOnly(pf plan.PlanFile, diffOnly bool) Model {
+func NewWithDiffOnly(pf plan.Plan, diffOnly bool) Model {
 	var resources []plan.ResourceChange
 	for _, rc := range pf.ResourceChanges {
 		if rc.Change.NormalizedAction() != plan.ActionNoOp {
@@ -526,13 +527,15 @@ func (m *Model) buildLeftContent() string {
 			} else {
 				for _, d := range diffs {
 					key := lipgloss.NewStyle().Foreground(clrAccent).Render(d.Key)
-					before := lipgloss.NewStyle().Foreground(clrDelete).Render(d.BeforeDisplay)
+					beforeDisplay := valuefmt.Format(d.BeforeRaw, d.BeforeSensitive)
+					before := lipgloss.NewStyle().Foreground(clrDelete).Render(beforeDisplay)
 					arrow := lipgloss.NewStyle().Foreground(clrMuted).Render(" → ")
 					var after string
 					if d.IsUnknownAfter {
 						after = lipgloss.NewStyle().Foreground(clrReplace).Italic(true).Render("(known after apply)")
 					} else {
-						after = lipgloss.NewStyle().Foreground(clrCreate).Render(d.AfterDisplay)
+						afterDisplay := valuefmt.Format(d.AfterRaw, d.AfterSensitive)
+						after = lipgloss.NewStyle().Foreground(clrCreate).Render(afterDisplay)
 					}
 					detail := padTo("    "+key+"  "+before+arrow+after, lw)
 					sb.WriteString(detail + "\n")
@@ -629,7 +632,7 @@ type uLine struct {
 }
 
 // valueToLinesRaw is like valueToLines but operates on the full json.RawMessage,
-// bypassing the 120-char truncation applied by plan.FormatValue. Used by the
+// bypassing the compact truncation used in resource summaries. Used by the
 // right panel to show complete attribute values.
 func valueToLinesRaw(raw json.RawMessage, sensitive bool, maxW int, isBefore bool) (plain, rich []string) {
 	scalarClr := clrCreate

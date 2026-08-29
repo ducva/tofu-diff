@@ -2,17 +2,17 @@
 type: User Interface Architecture
 title: Terminal interfaces
 description: Responsibilities and behavior of tofu-diff's pipe-friendly renderer and interactive Bubble Tea TUI.
-resource: ../../tui/tui.go
+resource: ../../internal/presentation/tui/model.go
 tags: [tui, rendering, bubble-tea, terminal]
 status: draft
 stale_after: 2026-09-26T12:08:42+07:00
 generated: { by: Codex, at: 2026-08-27T13:15:55+07:00 }
 sources:
   - id: tui
-    resource: ../../tui/tui.go
+    resource: ../../internal/presentation/tui/model.go
     title: Interactive TUI
   - id: renderer
-    resource: ../../render/render.go
+    resource: ../../internal/presentation/text/presenter.go
     title: Plain-text renderer
   - id: readme
     resource: ../../README.md
@@ -46,6 +46,6 @@ User-facing controls and the automatic TTY/plain-text selection are summarized i
 * Preserve the plain-text path when expanding TUI-only behavior.
 * Use ANSI-aware display widths for styled terminal content; byte length is not a reliable rendered width.
 
-[^tui]: Source: [Interactive TUI](../../tui/tui.go).
-[^renderer]: Source: [Plain-text renderer](../../render/render.go).
+[^tui]: Source: [Interactive TUI](../../internal/presentation/tui/model.go).
+[^renderer]: Source: [Plain-text renderer](../../internal/presentation/text/presenter.go).
 [^readme]: Source: [User-facing interface documentation](../../README.md).

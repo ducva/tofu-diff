@@ -1,10 +1,10 @@
-package render
+package text
 
 import (
   "bytes"
   "encoding/json"
   "testing"
-  "github.com/ducva/tofu-diff/plan"
+  "github.com/ducva/tofu-diff/internal/plan/domain"
 )
 
 func TestRenderDiffOnly(t *testing.T) {
@@ -12,15 +12,15 @@ func TestRenderDiffOnly(t *testing.T) {
   after := json.RawMessage(`"new"`)
   unchangedBefore := json.RawMessage(`"same"`)
   unchangedAfter := json.RawMessage(`"same"`)
-  rc := plan.ResourceChange{
+  rc := domain.ResourceChange{
     Address: "test.example",
-    Change: plan.Change{
+    Change: domain.Change{
       Actions: []string{"update"},
       Before: map[string]json.RawMessage{"changed": before, "same": unchangedBefore},
       After: map[string]json.RawMessage{"changed": after, "same": unchangedAfter},
     },
   }
-  pf := plan.PlanFile{FormatVersion: "1.0", ResourceChanges: []plan.ResourceChange{rc}}
+  pf := domain.Plan{FormatVersion: "1.0", ResourceChanges: []domain.ResourceChange{rc}}
   // diffOnly true should show only changed
   var buf bytes.Buffer
   r := NewWithDiffOnly(&buf, true)

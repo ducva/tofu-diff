@@ -1,4 +1,4 @@
-package render
+package text
 
 import (
 	"bufio"
@@ -8,7 +8,8 @@ import (
 	"io"
 	"sort"
 
-	"github.com/ducva/tofu-diff/plan"
+	"github.com/ducva/tofu-diff/internal/plan/domain"
+	"github.com/ducva/tofu-diff/internal/presentation/valuefmt"
 )
 
 type PlanRenderer struct {
@@ -28,13 +29,17 @@ func (r *PlanRenderer) SetDiffOnly(v bool) {
 	r.diffOnly = v
 }
 
-func (r *PlanRenderer) Render(pf plan.PlanFile) error {
+func (r *PlanRenderer) Present(plan domain.Plan) error {
+	return r.Render(plan)
+}
+
+func (r *PlanRenderer) Render(pf domain.Plan) error {
 	bw := bufio.NewWriter(r.out)
 	defer bw.Flush()
 
 	printed := 0
 	for _, rc := range pf.ResourceChanges {
-		if rc.Change.NormalizedAction() == plan.ActionNoOp {
+		if rc.Change.NormalizedAction() == domain.ActionNoOp {
 			continue
 		}
 		r.renderResource(bw, rc)
@@ -48,58 +53,63 @@ func (r *PlanRenderer) Render(pf plan.PlanFile) error {
 	return nil
 }
 
-func (r *PlanRenderer) renderResource(w io.Writer, rc plan.ResourceChange) {
+func (r *PlanRenderer) renderResource(w io.Writer, rc domain.ResourceChange) {
 	action := rc.Change.NormalizedAction()
 	fmt.Fprintf(w, "%s %s\n", r.actionLabel(action), rc.Address)
 
 	switch action {
-	case plan.ActionCreate:
+	case domain.ActionCreate:
 		for _, key := range sortedKeys(rc.Change.After) {
 			if rc.Change.AfterUnknown[key] {
 				fmt.Fprintf(w, "  + %s = (known after apply)\n", key)
 			} else {
-				val := plan.FormatValue(rc.Change.After[key], rc.Change.AfterSensitive[key])
+				val := valuefmt.Format(rc.Change.After[key], rc.Change.AfterSensitive[key])
 				fmt.Fprintf(w, "  + %s = %s\n", key, val)
 			}
 		}
-	case plan.ActionDelete:
+	case domain.ActionDelete:
 		for _, key := range sortedKeys(rc.Change.Before) {
-			val := plan.FormatValue(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
+			val := valuefmt.Format(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
 			fmt.Fprintf(w, "  - %s = %s\n", key, val)
 		}
-	case plan.ActionUpdate, plan.ActionReplace:
+	case domain.ActionUpdate, domain.ActionReplace:
 		if r.diffOnly {
-			for _, d := range plan.DiffAttributes(rc.Change) {
-				fmt.Fprintf(w, "  ~ %s: %s -> %s\n", d.Key, d.BeforeDisplay, d.AfterDisplay)
+			for _, d := range domain.DiffAttributes(rc.Change) {
+				before := valuefmt.Format(d.BeforeRaw, d.BeforeSensitive)
+				after := valuefmt.Format(d.AfterRaw, d.AfterSensitive)
+				if d.IsUnknownAfter {
+					after = "(known after apply)"
+				}
+				fmt.Fprintf(w, "  ~ %s: %s -> %s\n", d.Key, before, after)
 			}
 		} else {
 			// Full context: show all attributes including unchanged ones.
 			keys := sortedKeysUnion(rc.Change.Before, rc.Change.After, rc.Change.AfterUnknown)
 			for _, key := range keys {
 				if rc.Change.AfterUnknown[key] {
-					beforeVal := plan.FormatValue(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
+					beforeVal := valuefmt.Format(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
 					fmt.Fprintf(w, "  ~ %s: %s -> (known after apply)\n", key, beforeVal)
 					continue
 				}
 				beforeRaw := rc.Change.Before[key]
 				afterRaw := rc.Change.After[key]
 				if bytesEqual(beforeRaw, afterRaw) {
-					val := plan.FormatValue(beforeRaw, rc.Change.BeforeSensitive[key] || rc.Change.AfterSensitive[key])
+					val := valuefmt.Format(beforeRaw, rc.Change.BeforeSensitive[key] || rc.Change.AfterSensitive[key])
 					fmt.Fprintf(w, "    %s = %s\n", key, val)
 					continue
 				}
 				if beforeRaw == nil && afterRaw != nil {
-					val := plan.FormatValue(afterRaw, rc.Change.AfterSensitive[key])
+					val := valuefmt.Format(afterRaw, rc.Change.AfterSensitive[key])
 					fmt.Fprintf(w, "  + %s = %s\n", key, val)
 					continue
 				}
 				if afterRaw == nil && beforeRaw != nil {
-					val := plan.FormatValue(beforeRaw, rc.Change.BeforeSensitive[key])
+					val := valuefmt.Format(beforeRaw, rc.Change.BeforeSensitive[key])
 					fmt.Fprintf(w, "  - %s = %s\n", key, val)
 					continue
 				}
-				beforeVal := plan.FormatValue(beforeRaw, rc.Change.BeforeSensitive[key])
-				afterVal := plan.FormatValue(afterRaw, rc.Change.AfterSensitive[key])
+				beforeVal := valuefmt.Format(beforeRaw, rc.Change.BeforeSensitive[key])
+				afterVal := valuefmt.Format(afterRaw, rc.Change.AfterSensitive[key])
 				fmt.Fprintf(w, "  ~ %s: %s -> %s\n", key, beforeVal, afterVal)
 			}
 		}
@@ -108,15 +118,15 @@ func (r *PlanRenderer) renderResource(w io.Writer, rc plan.ResourceChange) {
 	fmt.Fprintln(w)
 }
 
-func (r *PlanRenderer) actionLabel(action plan.ActionType) string {
+func (r *PlanRenderer) actionLabel(action domain.ActionType) string {
 	switch action {
-	case plan.ActionCreate:
+	case domain.ActionCreate:
 		return "[+] create:"
-	case plan.ActionDelete:
+	case domain.ActionDelete:
 		return "[-] destroy:"
-	case plan.ActionUpdate:
+	case domain.ActionUpdate:
 		return "[~] update:"
-	case plan.ActionReplace:
+	case domain.ActionReplace:
 		return "[±] replace:"
 	default:
 		return "[?] unknown:"
