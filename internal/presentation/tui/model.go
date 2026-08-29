@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -32,6 +33,9 @@ var (
 	// Unified diff line background tints (medium intensity)
 	bgRemoved = lipgloss.Color("#3d1616") // medium dark red
 	bgAdded   = lipgloss.Color("#163d16") // medium dark green
+	clrMenuBg = lipgloss.Color("235")
+
+	writeClipboard = clipboard.WriteAll
 )
 
 func actionColor(a plan.ActionType) lipgloss.Color {
@@ -93,6 +97,18 @@ type ActionSummary struct {
 	Replace int
 }
 
+type contextMenuItem int
+
+const (
+	contextMenuCopyResourceName contextMenuItem = iota
+	contextMenuCopyPlanCommand
+)
+
+var contextMenuLabels = []string{
+	"Copy full resource name",
+	"Copy tofu plan command",
+}
+
 type Model struct {
 	resources []plan.ResourceChange
 	filtered  []int // indices into resources
@@ -117,6 +133,8 @@ type Model struct {
 	summary ActionSummary
 	copyStatus string
 	diffOnly bool
+	contextMenuOpen bool
+	contextMenuCursor int
 }
 
 const (
@@ -335,6 +353,10 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.contextMenuOpen {
+		return m.handleContextMenuKey(msg)
+	}
+
 	switch msg.String() {
 	case "[":
 		targetW := m.leftWidth() - 2
@@ -366,11 +388,18 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchMode = true
 		m.searchInput.Focus()
 
+	case "?":
+		if m.selectedIndex() >= 0 {
+			m.contextMenuOpen = true
+			m.contextMenuCursor = 0
+			m.refreshViewports()
+		}
+
 	case "y":
 		if m.focus == focusLeft {
 			if ri := m.selectedIndex(); ri >= 0 {
 				rc := m.resources[ri]
-				if err := clipboard.WriteAll(rc.Address); err != nil {
+				if err := writeClipboard(rc.Address); err != nil {
 					m.copyStatus = "Copy failed: " + err.Error()
 				} else {
 					m.copyStatus = "Copied address!"
@@ -467,6 +496,57 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func (m Model) handleContextMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "?":
+		m.contextMenuOpen = false
+		m.refreshViewports()
+	case "up", "k":
+		if m.contextMenuCursor > 0 {
+			m.contextMenuCursor--
+		}
+	case "down", "j":
+		if m.contextMenuCursor < len(contextMenuLabels)-1 {
+			m.contextMenuCursor++
+		}
+	case "enter":
+		m.executeContextMenuItem(contextMenuItem(m.contextMenuCursor))
+	}
+	return m, nil
+}
+
+func (m *Model) executeContextMenuItem(item contextMenuItem) {
+	ri := m.selectedIndex()
+	if ri < 0 {
+		m.contextMenuOpen = false
+		return
+	}
+
+	address := m.resources[ri].Address
+	text := address
+	status := "Copied resource name!"
+	if item == contextMenuCopyPlanCommand {
+		text = tofuPlanTargetCommand(address)
+		status = "Copied tofu plan command!"
+	}
+
+	if err := writeClipboard(text); err != nil {
+		m.copyStatus = "Copy failed: " + err.Error()
+	} else {
+		m.copyStatus = status
+	}
+	m.contextMenuOpen = false
+	m.refreshViewports()
+}
+
+func tofuPlanTargetCommand(address string) string {
+	return "tofu plan -target=" + shellQuote(address)
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // padTo pads s to exactly width display cells (ANSI-aware).
@@ -978,10 +1058,143 @@ func (m Model) View() string {
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
 
-	return m.renderHeader() + "\n" +
+	view := m.renderHeader() + "\n" +
 		m.renderSearchBar() + "\n" +
 		panels + "\n" +
 		m.renderFooter()
+	if m.contextMenuOpen {
+		return overlayCentered(view, m.renderContextMenu(), m.width, m.height)
+	}
+	return view
+}
+
+func overlayCentered(base, overlay string, width, height int) string {
+	overlayWidth := lipgloss.Width(overlay)
+	overlayHeight := lipgloss.Height(overlay)
+	left := max(0, (width-overlayWidth)/2)
+	top := max(0, (height-overlayHeight)/2)
+
+	baseLines := strings.Split(base, "\n")
+	overlayLines := strings.Split(overlay, "\n")
+	for i, overlayLine := range overlayLines {
+		row := top + i
+		if row < 0 || row >= len(baseLines) {
+			continue
+		}
+
+		baseLine := baseLines[row]
+		baseLines[row] = cutANSI(baseLine, 0, left) +
+			padMenuLine(overlayLine, overlayWidth) +
+			cutANSI(baseLine, left+overlayWidth, width)
+	}
+	return strings.Join(baseLines, "\n")
+}
+
+func padMenuLine(line string, width int) string {
+	padding := width - lipgloss.Width(line)
+	if padding <= 0 {
+		return line
+	}
+	return line + lipgloss.NewStyle().Background(clrMenuBg).Render(strings.Repeat(" ", padding))
+}
+
+// cutANSI returns the cell range [left, right) without breaking ANSI escape
+// sequences. It is used to replace a rectangular section of the rendered TUI.
+func cutANSI(s string, left, right int) string {
+	if right <= left {
+		return ""
+	}
+
+	var out strings.Builder
+	cell := 0
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			start := i
+			i++
+			if i < len(s) && s[i] == '[' {
+				i++
+				for i < len(s) {
+					b := s[i]
+					i++
+					if b >= '@' && b <= '~' {
+						break
+					}
+				}
+			} else if i < len(s) {
+				i++
+			}
+			if cell >= left && cell < right {
+				out.WriteString(s[start:i])
+			}
+			continue
+		}
+
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if size == 0 {
+			break
+		}
+		char := s[i : i+size]
+		charWidth := lipgloss.Width(char)
+		if cell >= left && cell+charWidth <= right {
+			out.WriteString(char)
+		}
+		cell += charWidth
+		i += size
+	}
+	return out.String()
+}
+
+func (m *Model) renderContextMenu() string {
+	address := "(no resource selected)"
+	if ri := m.selectedIndex(); ri >= 0 {
+		address = m.resources[ri].Address
+	}
+
+	var sb strings.Builder
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Resource actions"))
+	sb.WriteString("\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Render(address))
+	sb.WriteString("\n\n")
+	for i, label := range contextMenuLabels {
+		line := "  " + label
+		if i == m.contextMenuCursor {
+			line = lipgloss.NewStyle().Background(clrSelBg).Bold(true).Render("> " + label)
+		}
+		sb.WriteString(line)
+		if i < len(contextMenuLabels)-1 {
+			sb.WriteString("\n")
+		}
+	}
+	sb.WriteString("\n\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Render("↑↓/jk select · enter copy · esc close"))
+	sb.WriteString("\n\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Bold(true).Render("Preview"))
+	sb.WriteString("\n")
+	previewStyle := lipgloss.NewStyle().Foreground(clrMuted)
+	for _, line := range wrapTextSoft(m.contextMenuPreview(), 56) {
+		sb.WriteString(previewStyle.Render("  " + line))
+		sb.WriteString("\n")
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(clrAccent).
+		Background(clrMenuBg).
+		Padding(1, 2).
+		Render(sb.String())
+}
+
+func (m *Model) contextMenuPreview() string {
+	ri := m.selectedIndex()
+	if ri < 0 {
+		return ""
+	}
+
+	address := m.resources[ri].Address
+	if contextMenuItem(m.contextMenuCursor) == contextMenuCopyPlanCommand {
+		return tofuPlanTargetCommand(address)
+	}
+	return address
 }
 
 func (m *Model) renderHeader() string {
@@ -1067,6 +1280,7 @@ func (m *Model) renderFooter() string {
 		{"↑↓/jk", "navigate"},
 		{"Space", "expand"},
 		{"y", "copy"},
+		{"?", "resource menu"},
 		{"[/]", "resize"},
 		{"Tab", "switch panel"},
 		{"E/C", "expand/collapse all"},
