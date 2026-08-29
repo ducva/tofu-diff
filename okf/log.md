@@ -1,5 +1,11 @@
 # Bundle update log
 
+## 2026-08-29
+
+* **TUI resource actions**: Documented the selected-resource `?` menu, its clipboard actions, and keyboard navigation.
+* **TUI menu overlay**: Documented that the resource menu is composited over the existing TUI view.
+* **TUI menu preview**: Documented the live result preview for the highlighted clipboard action.
+
 ## 2026-08-27
 
 * **History reset**: Re-grounded the bundle in the current root working tree after Git history was cleared, and removed obsolete repository revision metadata.

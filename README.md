@@ -51,6 +51,7 @@ tofu-diff tfplan
 | `↑` / `↓` or `j` / `k` | Navigate resources   |
 | `Space`       | Expand / collapse              |
 | `y`           | Copy the selected resource     |
+| `?`           | Open the selected resource menu |
 | `[` / `]`     | Resize panels                  |
 | `Tab`         | Switch panel                   |
 | `E` / `C`     | Expand / collapse all          |

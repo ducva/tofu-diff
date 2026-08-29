@@ -6,7 +6,7 @@ resource: ../../internal/presentation/tui/model.go
 tags: [tui, rendering, bubble-tea, terminal]
 status: draft
 stale_after: 2026-09-26T12:08:42+07:00
-generated: { by: Codex, at: 2026-08-27T13:15:55+07:00 }
+generated: { by: Codex, at: 2026-08-29T15:43:22+07:00 }
 sources:
   - id: tui
     resource: ../../internal/presentation/tui/model.go
@@ -36,6 +36,8 @@ This path is designed for redirected stdout, files, and shell pipelines. Avoid a
 The Bubble Tea `Model` owns the filtered resource indices, expansion state, cursor, focused panel, search input, action filters, viewports, dimensions, action summary, and transient UI state. `Update` handles terminal resize and delegates keyboard input between search mode and normal mode; `View` composes the header, search/filter row, bordered panels, and footer.[^tui]
 
 The left panel is the navigation surface. The right panel renders resource metadata and full attribute values. Values are converted to parallel plain and styled lines, JSON is pretty-printed, long content is wrapped, and an LCS calculation classifies unchanged, removed, and added lines for unified-diff rendering.[^tui]
+
+With a resource selected, `?` opens a centered overlay resource menu while preserving the underlying TUI. `↑`/`↓` or `j`/`k` select either copying the full resource address or copying a shell-quoted `tofu plan -target=<address>` command; the selected action's result is shown in a preview at the bottom of the menu. `Enter` performs the copy and `Esc` closes the menu.[^tui]
 
 User-facing controls and the automatic TTY/plain-text selection are summarized in the README. When controls change, update the footer and README together so discoverability matches behavior.[^readme]
 
