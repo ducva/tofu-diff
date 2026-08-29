@@ -79,13 +79,19 @@ For binary plans (ZIP-wrapped protobuf), it decodes the `tfplan` entry using the
 
 ```
 tofu-diff/
-├── main.go            # CLI entry point
-├── plan/              # Plan file loading and diff logic
-├── render/            # Plain-text renderer
-├── tui/               # Interactive TUI (Bubble Tea)
-├── data/              # Test plan files
-├── docs/assets/       # README images
-└── requirements/      # User stories and design docs
+├── cmd/tofu-diff/                 # Canonical executable entry point
+├── internal/cli/                  # Flags, source selection, and TTY dispatch
+├── internal/plan/
+│   ├── domain/                    # Plan semantics and attribute diff rules
+│   ├── application/               # Inspect-plan use case and ports
+│   └── ingestion/                 # JSON and native OpenTofu anti-corruption layer
+├── internal/presentation/
+│   ├── text/                      # Pipe-friendly output adapter
+│   ├── tui/                       # Interactive Bubble Tea adapter
+│   └── valuefmt/                  # Shared compact value formatting
+├── main.go                        # Compatibility entry point for go install
+├── docs/assets/                   # README images
+└── okf/                           # Repository knowledge
 ```
 
 ## Requirements

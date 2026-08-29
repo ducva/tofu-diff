@@ -2,12 +2,12 @@ package tui
 
 import (
   "testing"
-  "github.com/ducva/tofu-diff/plan"
+  plan "github.com/ducva/tofu-diff/internal/plan/domain"
   tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestDiffOnlyDefault(t *testing.T) {
-  pf := plan.PlanFile{FormatVersion: "1.0"}
+  pf := plan.Plan{FormatVersion: "1.0"}
   m := New(pf)
   if !m.diffOnly {
     t.Fatalf("expected default diffOnly true, got false")
@@ -23,7 +23,7 @@ func TestDiffOnlyDefault(t *testing.T) {
 }
 
 func TestToggleO(t *testing.T) {
-  pf := plan.PlanFile{FormatVersion: "1.0", ResourceChanges: []plan.ResourceChange{{Address: "a.b", Change: plan.Change{Actions: []string{"update"}}}}}
+  pf := plan.Plan{FormatVersion: "1.0", ResourceChanges: []plan.ResourceChange{{Address: "a.b", Change: plan.Change{Actions: []string{"update"}}}}}
   m := New(pf)
   // need to make ready to handle keys
   m.width = 100

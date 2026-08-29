@@ -26,11 +26,15 @@ The repository is a single Go module, `github.com/ducva/tofu-diff`, with Bubble 
 
 | Path | Responsibility |
 | --- | --- |
-| `main.go` | CLI argument handling, input selection, output-mode dispatch, and top-level error handling. |
-| `plan/` | Shared plan domain model, loaders, binary decoding, action classification, and attribute diff calculation. |
-| `render/` | Non-interactive, plain-text output for pipes and redirected stdout. |
-| `tui/` | Bubble Tea state, keyboard interaction, filtering, layout, and unified diff presentation. |
-| `data/` | Sample JSON and binary plans used for local verification. |
+| `cmd/tofu-diff/` | Canonical executable entry point. |
+| `main.go` | Compatibility entry point preserving module-root `go install`. |
+| `internal/cli/` | CLI argument handling, source selection, TTY dispatch, and top-level error handling. |
+| `internal/plan/domain/` | Presentation-neutral plan model, validated actions, invariants, and attribute diff calculation. |
+| `internal/plan/application/` | Inspect-plan use case plus decoder and presenter ports. |
+| `internal/plan/ingestion/` | JSON/native format detection, decoding, and translation into the domain model. |
+| `internal/presentation/text/` | Non-interactive output for pipes and redirected stdout. |
+| `internal/presentation/tui/` | Bubble Tea state, keyboard interaction, filtering, layout, and unified diff presentation. |
+| `internal/presentation/valuefmt/` | Shared compact and sensitivity-aware value formatting. |
 | `.github/workflows/` | Continuous delivery workflows for testing, packaging, and publishing releases. |
 | `okf/` | Progressive-disclosure repository knowledge and maintenance history. |
 
