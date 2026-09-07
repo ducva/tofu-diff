@@ -40,6 +40,9 @@ tofu-diff plan.json
 # View it in plain-text (pipe to a file or another command)
 tofu-diff plan.json | less
 
+# View grouped by module
+tofu-diff --group-by-module plan.json
+
 # View a binary plan directly
 tofu-diff tfplan
 ```
@@ -58,6 +61,7 @@ tofu-diff tfplan
 | `1` – `4`     | Toggle action filter           |
 | `/`           | Search resources               |
 | `o`           | Toggle diff-only mode          |
+| `m`           | Toggle group by module         |
 | `q`           | Quit                           |
 
 ## How It Works

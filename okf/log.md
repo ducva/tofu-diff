@@ -1,5 +1,9 @@
 # Bundle update log
 
+## 2026-09-07
+
+* **Group by modules**: Documented the module grouping option across plain-text rendering (`Module:` headers) and interactive TUI (`m` toggle, collapsible module headers, relative resource address display, module right-panel overview, and module context actions).
+
 ## 2026-08-29
 
 * **TUI resource actions**: Documented the selected-resource `?` menu, its clipboard actions, and keyboard navigation.

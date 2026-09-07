@@ -13,8 +13,9 @@ import (
 )
 
 type PlanRenderer struct {
-	out      io.Writer
-	diffOnly bool
+	out           io.Writer
+	diffOnly      bool
+	groupByModule bool
 }
 
 func New(out io.Writer) *PlanRenderer {
@@ -25,8 +26,16 @@ func NewWithDiffOnly(out io.Writer, diffOnly bool) *PlanRenderer {
 	return &PlanRenderer{out: out, diffOnly: diffOnly}
 }
 
+func NewWithOptions(out io.Writer, diffOnly, groupByModule bool) *PlanRenderer {
+	return &PlanRenderer{out: out, diffOnly: diffOnly, groupByModule: groupByModule}
+}
+
 func (r *PlanRenderer) SetDiffOnly(v bool) {
 	r.diffOnly = v
+}
+
+func (r *PlanRenderer) SetGroupByModule(v bool) {
+	r.groupByModule = v
 }
 
 func (r *PlanRenderer) Present(plan domain.Plan) error {
@@ -37,17 +46,50 @@ func (r *PlanRenderer) Render(pf domain.Plan) error {
 	bw := bufio.NewWriter(r.out)
 	defer bw.Flush()
 
-	printed := 0
+	var changed []domain.ResourceChange
 	for _, rc := range pf.ResourceChanges {
-		if rc.Change.NormalizedAction() == domain.ActionNoOp {
-			continue
+		if rc.Change.NormalizedAction() != domain.ActionNoOp {
+			changed = append(changed, rc)
 		}
-		r.renderResource(bw, rc)
-		printed++
 	}
 
-	if printed == 0 {
+	if len(changed) == 0 {
 		fmt.Fprintf(bw, "No changes. Infrastructure is up-to-date.\n")
+		return nil
+	}
+
+	if !r.groupByModule {
+		for _, rc := range changed {
+			r.renderResource(bw, rc)
+		}
+		return nil
+	}
+
+	modulesMap := make(map[string][]domain.ResourceChange)
+	var moduleNames []string
+	for _, rc := range changed {
+		mod := rc.ModuleName()
+		if _, exists := modulesMap[mod]; !exists {
+			moduleNames = append(moduleNames, mod)
+		}
+		modulesMap[mod] = append(modulesMap[mod], rc)
+	}
+
+	sort.SliceStable(moduleNames, func(i, j int) bool {
+		if moduleNames[i] == "(root)" {
+			return true
+		}
+		if moduleNames[j] == "(root)" {
+			return false
+		}
+		return moduleNames[i] < moduleNames[j]
+	})
+
+	for _, mod := range moduleNames {
+		fmt.Fprintf(bw, "Module: %s\n\n", mod)
+		for _, rc := range modulesMap[mod] {
+			r.renderResource(bw, rc)
+		}
 	}
 
 	return nil

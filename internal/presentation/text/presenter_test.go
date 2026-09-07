@@ -48,3 +48,75 @@ func TestRenderDiffOnly(t *testing.T) {
 func contains(s, sub string) bool {
   return bytes.Contains([]byte(s), []byte(sub))
 }
+
+func TestRenderGroupByModule(t *testing.T) {
+	rcRoot := domain.ResourceChange{
+		Address: "aws_s3_bucket.main",
+		Change: domain.Change{
+			Actions: []string{"create"},
+			After:   map[string]json.RawMessage{"bucket": json.RawMessage(`"my-bucket"`)},
+		},
+	}
+	rcVpc := domain.ResourceChange{
+		Address:       "module.vpc.aws_subnet.public",
+		ModuleAddress: "module.vpc",
+		Change: domain.Change{
+			Actions: []string{"update"},
+			Before:  map[string]json.RawMessage{"cidr_block": json.RawMessage(`"10.0.1.0/24"`)},
+			After:   map[string]json.RawMessage{"cidr_block": json.RawMessage(`"10.0.2.0/24"`)},
+		},
+	}
+	rcAuth := domain.ResourceChange{
+		Address:       "module.auth.aws_cognito.pool",
+		ModuleAddress: "module.auth",
+		Change: domain.Change{
+			Actions: []string{"create"},
+			After:   map[string]json.RawMessage{"name": json.RawMessage(`"users"`)},
+		},
+	}
+
+	pf := domain.Plan{
+		FormatVersion:   "1.0",
+		ResourceChanges: []domain.ResourceChange{rcVpc, rcRoot, rcAuth},
+	}
+
+	var buf bytes.Buffer
+	r := NewWithOptions(&buf, true, true)
+	if err := r.Render(pf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+
+	// Check headers exist
+	if !contains(out, "Module: (root)") {
+		t.Fatalf("expected Module: (root) header, got:\n%s", out)
+	}
+	if !contains(out, "Module: module.auth") {
+		t.Fatalf("expected Module: module.auth header, got:\n%s", out)
+	}
+	if !contains(out, "Module: module.vpc") {
+		t.Fatalf("expected Module: module.vpc header, got:\n%s", out)
+	}
+
+	// Verify order: (root) -> module.auth -> module.vpc
+	idxRoot := bytes.Index([]byte(out), []byte("Module: (root)"))
+	idxAuth := bytes.Index([]byte(out), []byte("Module: module.auth"))
+	idxVpc := bytes.Index([]byte(out), []byte("Module: module.vpc"))
+
+	if !(idxRoot < idxAuth && idxAuth < idxVpc) {
+		t.Fatalf("expected order (root) < module.auth < module.vpc, got indices %d, %d, %d",
+			idxRoot, idxAuth, idxVpc)
+	}
+
+	// Verify ungrouped does not have Module: headers
+	buf.Reset()
+	r.SetGroupByModule(false)
+	if err := r.Render(pf); err != nil {
+		t.Fatal(err)
+	}
+	outUngrouped := buf.String()
+	if contains(outUngrouped, "Module: ") {
+		t.Fatalf("ungrouped output should not contain 'Module: ' header, got:\n%s", outUngrouped)
+	}
+}
+

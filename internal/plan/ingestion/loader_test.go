@@ -37,3 +37,58 @@ func TestLoadReaderRejectsUnsupportedAction(t *testing.T) {
 		t.Fatal("LoadReader accepted unsupported action")
 	}
 }
+
+func TestParseAddress(t *testing.T) {
+	tests := []struct {
+		addr       string
+		wantType   string
+		wantName   string
+		wantModule string
+	}{
+		{
+			addr:       "aws_s3_bucket.my_bucket",
+			wantType:   "aws_s3_bucket",
+			wantName:   "my_bucket",
+			wantModule: "",
+		},
+		{
+			addr:       "aws_s3_bucket.my_bucket[0]",
+			wantType:   "aws_s3_bucket",
+			wantName:   "my_bucket",
+			wantModule: "",
+		},
+		{
+			addr:       "module.vpc.aws_subnet.public",
+			wantType:   "aws_subnet",
+			wantName:   "public",
+			wantModule: "module.vpc",
+		},
+		{
+			addr:       "module.vpc.aws_subnet.public[\"key\"]",
+			wantType:   "aws_subnet",
+			wantName:   "public",
+			wantModule: "module.vpc",
+		},
+		{
+			addr:       "module.vpc[0].aws_subnet.public",
+			wantType:   "aws_subnet",
+			wantName:   "public",
+			wantModule: "module.vpc[0]",
+		},
+		{
+			addr:       "module.vpc[0].module.sub.aws_subnet.public[1]",
+			wantType:   "aws_subnet",
+			wantName:   "public",
+			wantModule: "module.vpc[0].module.sub",
+		},
+	}
+
+	for _, tt := range tests {
+		typ, name, mod := parseAddress(tt.addr)
+		if typ != tt.wantType || name != tt.wantName || mod != tt.wantModule {
+			t.Errorf("parseAddress(%q) = (%q, %q, %q), want (%q, %q, %q)",
+				tt.addr, typ, name, mod, tt.wantType, tt.wantName, tt.wantModule)
+		}
+	}
+}
+

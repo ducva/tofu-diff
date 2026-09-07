@@ -10,13 +10,14 @@ import (
 
 // Presenter adapts the Bubble Tea interface to the application output port.
 type Presenter struct {
-	DiffOnly bool
-	Input    io.Reader
-	Output   io.Writer
+	DiffOnly      bool
+	GroupByModule bool
+	Input         io.Reader
+	Output        io.Writer
 }
 
 func (p Presenter) Present(plan domain.Plan) error {
-	model := NewWithDiffOnly(plan, p.DiffOnly)
+	model := NewWithOptions(plan, p.DiffOnly, p.GroupByModule)
 	options := []tea.ProgramOption{tea.WithAltScreen()}
 	if p.Input != nil {
 		options = append(options, tea.WithInput(p.Input))

@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -109,13 +110,28 @@ var contextMenuLabels = []string{
 	"Copy tofu plan command",
 }
 
+type leftItemKind int
+
+const (
+	itemResource leftItemKind = iota
+	itemModuleHeader
+)
+
+type leftItem struct {
+	kind          leftItemKind
+	module        string
+	resourceIndex int
+}
+
 type Model struct {
 	resources []plan.ResourceChange
-	filtered  []int // indices into resources
+	filtered  []int // indices into resources matching filter & search
 
-	expanded map[int]bool // keyed by resource index
-	cursor   int          // index in filtered
-	focus    focusPanel
+	items            []leftItem
+	expanded         map[int]bool    // keyed by resource index
+	collapsedModules map[string]bool // keyed by module name
+	cursor           int             // index in items
+	focus            focusPanel
 
 	searchInput textinput.Model
 	searchMode  bool
@@ -130,10 +146,12 @@ type Model struct {
 
 	leftPanelWidthOffset int
 
-	summary ActionSummary
-	copyStatus string
-	diffOnly bool
-	contextMenuOpen bool
+	summary       ActionSummary
+	copyStatus    string
+	diffOnly      bool
+	groupByModule bool
+
+	contextMenuOpen   bool
 	contextMenuCursor int
 }
 
@@ -167,10 +185,14 @@ func (m *Model) rightWidth() int {
 }
 
 func New(pf plan.Plan) Model {
-	return NewWithDiffOnly(pf, true)
+	return NewWithOptions(pf, true, false)
 }
 
 func NewWithDiffOnly(pf plan.Plan, diffOnly bool) Model {
+	return NewWithOptions(pf, diffOnly, false)
+}
+
+func NewWithOptions(pf plan.Plan, diffOnly, groupByModule bool) Model {
 	var resources []plan.ResourceChange
 	for _, rc := range pf.ResourceChanges {
 		if rc.Change.NormalizedAction() != plan.ActionNoOp {
@@ -198,13 +220,15 @@ func NewWithDiffOnly(pf plan.Plan, diffOnly bool) Model {
 	ti.CharLimit = 100
 
 	m := Model{
-		resources:   resources,
-		expanded:    make(map[int]bool),
-		filters:     make(map[plan.ActionType]bool),
-		searchInput: ti,
-		cursor:      0,
-		summary:     summary,
-		diffOnly:    diffOnly,
+		resources:        resources,
+		expanded:         make(map[int]bool),
+		collapsedModules: make(map[string]bool),
+		filters:          make(map[plan.ActionType]bool),
+		searchInput:      ti,
+		cursor:           0,
+		summary:          summary,
+		diffOnly:         diffOnly,
+		groupByModule:    groupByModule,
 	}
 	m.refilter()
 	return m
@@ -220,6 +244,19 @@ func (m Model) WithDiffOnly(v bool) Model {
 // SetDiffOnly sets diff-only mode on the model pointer.
 func (m *Model) SetDiffOnly(v bool) {
 	m.diffOnly = v
+}
+
+// WithGroupByModule returns a copy of the model with groupByModule set.
+func (m Model) WithGroupByModule(v bool) Model {
+	m.groupByModule = v
+	m.refilter()
+	return m
+}
+
+// SetGroupByModule sets group-by-module mode on the model pointer.
+func (m *Model) SetGroupByModule(v bool) {
+	m.groupByModule = v
+	m.refilter()
 }
 
 func (m *Model) refilter() {
@@ -240,15 +277,68 @@ func (m *Model) refilter() {
 		}
 		if query != "" &&
 			!strings.Contains(strings.ToLower(rc.Address), query) &&
-			!strings.Contains(strings.ToLower(rc.Type), query) {
+			!strings.Contains(strings.ToLower(rc.Type), query) &&
+			!strings.Contains(strings.ToLower(rc.ModuleName()), query) {
 			continue
 		}
 		m.filtered = append(m.filtered, i)
 	}
 
-	if m.cursor >= len(m.filtered) {
-		if len(m.filtered) > 0 {
-			m.cursor = len(m.filtered) - 1
+	m.rebuildItems()
+}
+
+func (m *Model) rebuildItems() {
+	if !m.groupByModule {
+		m.items = make([]leftItem, len(m.filtered))
+		for i, ri := range m.filtered {
+			m.items[i] = leftItem{
+				kind:          itemResource,
+				module:        m.resources[ri].ModuleName(),
+				resourceIndex: ri,
+			}
+		}
+	} else {
+		modulesMap := make(map[string][]int)
+		var moduleNames []string
+		for _, ri := range m.filtered {
+			mod := m.resources[ri].ModuleName()
+			if _, exists := modulesMap[mod]; !exists {
+				moduleNames = append(moduleNames, mod)
+			}
+			modulesMap[mod] = append(modulesMap[mod], ri)
+		}
+
+		sort.SliceStable(moduleNames, func(i, j int) bool {
+			if moduleNames[i] == "(root)" {
+				return true
+			}
+			if moduleNames[j] == "(root)" {
+				return false
+			}
+			return moduleNames[i] < moduleNames[j]
+		})
+
+		m.items = nil
+		for _, mod := range moduleNames {
+			m.items = append(m.items, leftItem{
+				kind:   itemModuleHeader,
+				module: mod,
+			})
+			if !m.collapsedModules[mod] {
+				for _, ri := range modulesMap[mod] {
+					m.items = append(m.items, leftItem{
+						kind:          itemResource,
+						module:        mod,
+						resourceIndex: ri,
+					})
+				}
+			}
+		}
+	}
+
+	if m.cursor >= len(m.items) {
+		if len(m.items) > 0 {
+			m.cursor = len(m.items) - 1
 		} else {
 			m.cursor = 0
 		}
@@ -256,10 +346,31 @@ func (m *Model) refilter() {
 }
 
 func (m *Model) selectedIndex() int {
-	if len(m.filtered) == 0 || m.cursor >= len(m.filtered) {
+	if len(m.items) == 0 || m.cursor >= len(m.items) {
 		return -1
 	}
-	return m.filtered[m.cursor]
+	item := m.items[m.cursor]
+	if item.kind != itemResource {
+		return -1
+	}
+	return item.resourceIndex
+}
+
+func (m *Model) selectedItem() *leftItem {
+	if len(m.items) == 0 || m.cursor >= len(m.items) {
+		return nil
+	}
+	return &m.items[m.cursor]
+}
+
+func (m *Model) moduleResourceCount(mod string) int {
+	count := 0
+	for _, ri := range m.filtered {
+		if m.resources[ri].ModuleName() == mod {
+			count++
+		}
+	}
+	return count
 }
 
 func (m *Model) refreshViewports() {
@@ -270,13 +381,11 @@ func (m *Model) refreshViewports() {
 // scrollLeftToCursor adjusts leftVP.YOffset so the cursor row is visible.
 func (m *Model) scrollLeftToCursor() {
 	line := 0
-	for vi, ri := range m.filtered {
-		if vi == m.cursor {
-			break
-		}
+	for vi := 0; vi < m.cursor && vi < len(m.items); vi++ {
+		item := m.items[vi]
 		line++
-		if m.expanded[ri] {
-			diffs := plan.DiffAttributes(m.resources[ri].Change)
+		if item.kind == itemResource && m.expanded[item.resourceIndex] {
+			diffs := plan.DiffAttributes(m.resources[item.resourceIndex].Change)
 			if len(diffs) == 0 {
 				line++
 			} else {
@@ -389,7 +498,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.Focus()
 
 	case "?":
-		if m.selectedIndex() >= 0 {
+		if m.selectedItem() != nil {
 			m.contextMenuOpen = true
 			m.contextMenuCursor = 0
 			m.refreshViewports()
@@ -397,12 +506,26 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "y":
 		if m.focus == focusLeft {
-			if ri := m.selectedIndex(); ri >= 0 {
-				rc := m.resources[ri]
-				if err := writeClipboard(rc.Address); err != nil {
+			if sel := m.selectedItem(); sel != nil {
+				var text string
+				var successMsg string
+				if sel.kind == itemModuleHeader {
+					if sel.module == "(root)" {
+						m.copyStatus = "(root) module has no address"
+						m.refreshViewports()
+						return m, nil
+					}
+					text = sel.module
+					successMsg = "Copied module address!"
+				} else {
+					rc := m.resources[sel.resourceIndex]
+					text = rc.Address
+					successMsg = "Copied address!"
+				}
+				if err := writeClipboard(text); err != nil {
 					m.copyStatus = "Copy failed: " + err.Error()
 				} else {
-					m.copyStatus = "Copied address!"
+					m.copyStatus = successMsg
 				}
 				m.refreshViewports()
 			}
@@ -422,7 +545,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "down", "j":
 		if m.focus == focusLeft {
-			if m.cursor < len(m.filtered)-1 {
+			if m.cursor < len(m.items)-1 {
 				m.cursor++
 				m.scrollLeftToCursor()
 				m.rightVP.GotoTop()
@@ -432,9 +555,24 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rightVP.ScrollDown(1)
 		}
 
+	case "enter":
+		if m.focus == focusLeft {
+			if sel := m.selectedItem(); sel != nil && sel.kind == itemModuleHeader {
+				m.collapsedModules[sel.module] = !m.collapsedModules[sel.module]
+				m.rebuildItems()
+				m.refreshViewports()
+			}
+		}
+
 	case " ":
-		if ri := m.selectedIndex(); ri >= 0 {
-			m.expanded[ri] = !m.expanded[ri]
+		if sel := m.selectedItem(); sel != nil {
+			if sel.kind == itemModuleHeader {
+				m.collapsedModules[sel.module] = !m.collapsedModules[sel.module]
+				m.rebuildItems()
+			} else {
+				ri := sel.resourceIndex
+				m.expanded[ri] = !m.expanded[ri]
+			}
 			m.refreshViewports()
 		}
 
@@ -447,14 +585,23 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshViewports()
 
 	case "E":
+		m.collapsedModules = make(map[string]bool)
 		for _, ri := range m.filtered {
 			m.expanded[ri] = true
 		}
+		m.rebuildItems()
 		m.refreshViewports()
 
 	case "C":
-		for k := range m.expanded {
-			delete(m.expanded, k)
+		if len(m.expanded) > 0 {
+			m.expanded = make(map[int]bool)
+		} else if m.groupByModule {
+			for _, item := range m.items {
+				if item.kind == itemModuleHeader {
+					m.collapsedModules[item.module] = true
+				}
+			}
+			m.rebuildItems()
 		}
 		m.refreshViewports()
 
@@ -492,6 +639,17 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rightVP.GotoTop()
 		m.refreshViewports()
 
+	case "m", "M":
+		m.groupByModule = !m.groupByModule
+		if m.groupByModule {
+			m.copyStatus = "Group by module: enabled"
+		} else {
+			m.copyStatus = "Group by module: disabled"
+		}
+		m.rebuildItems()
+		m.rightVP.GotoTop()
+		m.refreshViewports()
+
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	}
@@ -518,18 +676,36 @@ func (m Model) handleContextMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) executeContextMenuItem(item contextMenuItem) {
-	ri := m.selectedIndex()
-	if ri < 0 {
+	sel := m.selectedItem()
+	if sel == nil {
 		m.contextMenuOpen = false
 		return
 	}
 
-	address := m.resources[ri].Address
-	text := address
-	status := "Copied resource name!"
-	if item == contextMenuCopyPlanCommand {
-		text = tofuPlanTargetCommand(address)
-		status = "Copied tofu plan command!"
+	var text string
+	var status string
+
+	if sel.kind == itemModuleHeader {
+		if sel.module == "(root)" {
+			m.copyStatus = "(root) module has no address"
+			m.contextMenuOpen = false
+			m.refreshViewports()
+			return
+		}
+		text = sel.module
+		status = "Copied module address!"
+		if item == contextMenuCopyPlanCommand {
+			text = tofuPlanTargetCommand(sel.module)
+			status = "Copied tofu plan command!"
+		}
+	} else {
+		address := m.resources[sel.resourceIndex].Address
+		text = address
+		status = "Copied resource name!"
+		if item == contextMenuCopyPlanCommand {
+			text = tofuPlanTargetCommand(address)
+			status = "Copied tofu plan command!"
+		}
 	}
 
 	if err := writeClipboard(text); err != nil {
@@ -561,7 +737,7 @@ func padTo(s string, width int) string {
 func (m *Model) buildLeftContent() string {
 	lw := max(1, m.leftWidth()-2)
 
-	if len(m.filtered) == 0 {
+	if len(m.items) == 0 {
 		msg := "  No resources match."
 		if len(m.resources) == 0 {
 			msg = "  No changes."
@@ -570,24 +746,60 @@ func (m *Model) buildLeftContent() string {
 	}
 
 	var sb strings.Builder
-	for vi, ri := range m.filtered {
+	for vi, item := range m.items {
+		selected := vi == m.cursor
+
+		if item.kind == itemModuleHeader {
+			collapsed := m.collapsedModules[item.module]
+			toggle := lipgloss.NewStyle().Foreground(clrAccent).Render(map[bool]string{true: "▶", false: "▼"}[collapsed])
+			count := m.moduleResourceCount(item.module)
+			badge := lipgloss.NewStyle().Foreground(clrMuted).Render(fmt.Sprintf("(%d)", count))
+
+			modTitle := item.module
+			const prefixW = 6
+			badgeW := lipgloss.Width(badge) + 1
+			maxTitleW := lw - prefixW - badgeW
+			if maxTitleW > 3 && len(modTitle) > maxTitleW {
+				modTitle = modTitle[:maxTitleW-3] + "..."
+			}
+
+			modStyle := lipgloss.NewStyle().Foreground(clrAccent).Bold(true)
+			line := fmt.Sprintf(" %s %s %s", toggle, modStyle.Render(modTitle), badge)
+			if selected {
+				style := lipgloss.NewStyle().Background(clrSelBg)
+				if m.focus == focusLeft {
+					style = style.Bold(true)
+				}
+				line = style.Render(padTo(line, lw))
+			} else {
+				line = padTo(line, lw)
+			}
+			sb.WriteString(line + "\n")
+			continue
+		}
+
+		ri := item.resourceIndex
 		rc := m.resources[ri]
 		action := rc.Change.NormalizedAction()
 		expanded := m.expanded[ri]
-		selected := vi == m.cursor
 
 		toggle := lipgloss.NewStyle().Foreground(clrMuted).Render(map[bool]string{true: "▼", false: "▶"}[expanded])
 		sym := lipgloss.NewStyle().Foreground(actionColor(action)).Bold(true).Render(actionSym(action))
 
-		// prefix: "  ▶ [~] " = 2+1+1+1+3+1 = 9 display chars
-		const prefixWidth = 9
-		addrMax := lw - prefixWidth
 		addr := rc.Address
-		if len(addr) > addrMax {
+		indent := "  "
+		if m.groupByModule {
+			addr = rc.RelativeAddress()
+			indent = "    "
+		}
+
+		prefixWidth := len(indent) + 7
+		addrMax := lw - prefixWidth
+		if len(addr) > addrMax && addrMax > 3 {
 			addr = addr[:addrMax-3] + "..."
 		}
 
-		line := fmt.Sprintf("  %s %s %s", toggle, sym, addr)
+		line := fmt.Sprintf("%s%s %s %s", indent, toggle, sym, addr)
 		if selected {
 			style := lipgloss.NewStyle().Background(clrSelBg)
 			if m.focus == focusLeft {
@@ -600,9 +812,13 @@ func (m *Model) buildLeftContent() string {
 		sb.WriteString(line + "\n")
 
 		if expanded {
+			attrIndent := "    "
+			if m.groupByModule {
+				attrIndent = "      "
+			}
 			diffs := plan.DiffAttributes(rc.Change)
 			if len(diffs) == 0 {
-				detail := padTo(lipgloss.NewStyle().Foreground(clrMuted).Italic(true).Render("    (no attribute changes)"), lw)
+				detail := padTo(lipgloss.NewStyle().Foreground(clrMuted).Italic(true).Render(attrIndent+"(no attribute changes)"), lw)
 				sb.WriteString(detail + "\n")
 			} else {
 				for _, d := range diffs {
@@ -617,7 +833,7 @@ func (m *Model) buildLeftContent() string {
 						afterDisplay := valuefmt.Format(d.AfterRaw, d.AfterSensitive)
 						after = lipgloss.NewStyle().Foreground(clrCreate).Render(afterDisplay)
 					}
-					detail := padTo("    "+key+"  "+before+arrow+after, lw)
+					detail := padTo(attrIndent+key+"  "+before+arrow+after, lw)
 					sb.WriteString(detail + "\n")
 				}
 			}
@@ -628,12 +844,17 @@ func (m *Model) buildLeftContent() string {
 
 func (m *Model) buildRightContent() string {
 	rw := max(1, m.rightWidth()-2)
-	ri := m.selectedIndex()
+	sel := m.selectedItem()
 
-	if ri < 0 {
-		return lipgloss.NewStyle().Foreground(clrMuted).Render("  Select a resource to inspect its diff")
+	if sel == nil {
+		return lipgloss.NewStyle().Foreground(clrMuted).Render("  Select a resource or module to inspect")
 	}
 
+	if sel.kind == itemModuleHeader {
+		return m.buildModuleRightContent(sel.module)
+	}
+
+	ri := sel.resourceIndex
 	rc := m.resources[ri]
 	action := rc.Change.NormalizedAction()
 
@@ -691,6 +912,64 @@ func (m *Model) buildRightContent() string {
 		for _, ul := range ulines {
 			sb.WriteString(renderULine(ul, rw) + "\n")
 		}
+	}
+
+	return sb.String()
+}
+
+func (m *Model) buildModuleRightContent(mod string) string {
+	rw := max(1, m.rightWidth()-2)
+	hr := lipgloss.NewStyle().Foreground(clrBorder).Render(" " + strings.Repeat("─", max(0, rw-2)))
+
+	var sb strings.Builder
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Bold(true).Render(" MODULE") + "\n")
+	sb.WriteString(hr + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Render(" module  ") + mod + "\n")
+
+	var modResources []plan.ResourceChange
+	var s ActionSummary
+	for _, rc := range m.resources {
+		if rc.ModuleName() == mod {
+			modResources = append(modResources, rc)
+			switch rc.Change.NormalizedAction() {
+			case plan.ActionCreate:
+				s.Create++
+			case plan.ActionUpdate:
+				s.Update++
+			case plan.ActionDelete:
+				s.Delete++
+			case plan.ActionReplace:
+				s.Replace++
+			}
+		}
+	}
+
+	var summaryParts []string
+	if s.Create > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrCreate).Render(fmt.Sprintf("%d to create", s.Create)))
+	}
+	if s.Update > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrUpdate).Render(fmt.Sprintf("%d to update", s.Update)))
+	}
+	if s.Delete > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrDelete).Render(fmt.Sprintf("%d to destroy", s.Delete)))
+	}
+	if s.Replace > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrReplace).Render(fmt.Sprintf("%d to replace", s.Replace)))
+	}
+	changesStr := strings.Join(summaryParts, ", ")
+	if changesStr == "" {
+		changesStr = "no changes"
+	}
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Render(" changes ") + fmt.Sprintf("%d (%s)\n\n", len(modResources), changesStr))
+
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Bold(true).Render(fmt.Sprintf(" RESOURCES (%d)", len(modResources))) + "\n")
+	sb.WriteString(hr + "\n")
+
+	for _, rc := range modResources {
+		act := rc.Change.NormalizedAction()
+		sym := lipgloss.NewStyle().Foreground(actionColor(act)).Bold(true).Render(actionSym(act))
+		sb.WriteString(fmt.Sprintf(" %s %s\n", sym, rc.Address))
 	}
 
 	return sb.String()
@@ -1145,23 +1424,35 @@ func cutANSI(s string, left, right int) string {
 }
 
 func (m *Model) renderContextMenu() string {
-	address := "(no resource selected)"
-	if ri := m.selectedIndex(); ri >= 0 {
-		address = m.resources[ri].Address
+	title := "Resource actions"
+	target := "(no resource selected)"
+	label0 := "Copy full resource name"
+	label1 := "Copy tofu plan command"
+
+	if sel := m.selectedItem(); sel != nil {
+		if sel.kind == itemModuleHeader {
+			title = "Module actions"
+			target = sel.module
+			label0 = "Copy module address"
+		} else {
+			target = m.resources[sel.resourceIndex].Address
+		}
 	}
 
+	labels := []string{label0, label1}
+
 	var sb strings.Builder
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Resource actions"))
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title))
 	sb.WriteString("\n")
-	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Render(address))
+	sb.WriteString(lipgloss.NewStyle().Foreground(clrMuted).Render(target))
 	sb.WriteString("\n\n")
-	for i, label := range contextMenuLabels {
+	for i, label := range labels {
 		line := "  " + label
 		if i == m.contextMenuCursor {
 			line = lipgloss.NewStyle().Background(clrSelBg).Bold(true).Render("> " + label)
 		}
 		sb.WriteString(line)
-		if i < len(contextMenuLabels)-1 {
+		if i < len(labels)-1 {
 			sb.WriteString("\n")
 		}
 	}
@@ -1185,12 +1476,22 @@ func (m *Model) renderContextMenu() string {
 }
 
 func (m *Model) contextMenuPreview() string {
-	ri := m.selectedIndex()
-	if ri < 0 {
+	sel := m.selectedItem()
+	if sel == nil {
 		return ""
 	}
 
-	address := m.resources[ri].Address
+	if sel.kind == itemModuleHeader {
+		if sel.module == "(root)" {
+			return "(root) module has no target address"
+		}
+		if contextMenuItem(m.contextMenuCursor) == contextMenuCopyPlanCommand {
+			return tofuPlanTargetCommand(sel.module)
+		}
+		return sel.module
+	}
+
+	address := m.resources[sel.resourceIndex].Address
 	if contextMenuItem(m.contextMenuCursor) == contextMenuCopyPlanCommand {
 		return tofuPlanTargetCommand(address)
 	}
@@ -1226,6 +1527,10 @@ func (m *Model) renderHeader() string {
 
 	if m.diffOnly {
 		badge := lipgloss.NewStyle().Foreground(clrAccent).Bold(true).Reverse(true).Render(" DIFF ONLY ")
+		base = base + "  " + badge
+	}
+	if m.groupByModule {
+		badge := lipgloss.NewStyle().Foreground(clrAccent).Bold(true).Reverse(true).Render(" MODULES ")
 		base = base + "  " + badge
 	}
 
@@ -1280,24 +1585,25 @@ func (m *Model) renderFooter() string {
 		{"↑↓/jk", "navigate"},
 		{"Space", "expand"},
 		{"y", "copy"},
-		{"?", "resource menu"},
+		{"?", "menu"},
 		{"[/]", "resize"},
 		{"Tab", "switch panel"},
 		{"E/C", "expand/collapse all"},
 		{"1-4", "filter by action"},
 		{"/", "search"},
 		{"o", "diff-only"},
+		{"m", "modules"},
 		{"q", "quit"},
 	}
 	var parts []string
 	for _, h := range hints {
 		kStyle := lipgloss.NewStyle().Bold(true)
-		if h.key == "o" && m.diffOnly {
+		if (h.key == "o" && m.diffOnly) || (h.key == "m" && m.groupByModule) {
 			kStyle = kStyle.Reverse(true).Foreground(clrAccent)
 		}
 		k := kStyle.Render(h.key)
 		dStyle := lipgloss.NewStyle().Foreground(clrMuted)
-		if h.key == "o" && m.diffOnly {
+		if (h.key == "o" && m.diffOnly) || (h.key == "m" && m.groupByModule) {
 			dStyle = dStyle.Foreground(clrAccent)
 		}
 		d := dStyle.Render(" " + h.desc)
