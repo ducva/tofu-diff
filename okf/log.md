@@ -2,6 +2,7 @@
 
 ## 2026-09-07
 
+* **Module context menu actions**: Unified context menu (`?`) and quick copy (`y`) actions across resource and module items, providing module address and `tofu plan -target=<module>` (or `tofu plan` for root module) copying with live previews.
 * **Group by modules**: Documented the module grouping option across plain-text rendering (`Module:` headers) and interactive TUI (`m` toggle, collapsible module headers, relative resource address display, module right-panel overview, and module context actions).
 
 ## 2026-08-29

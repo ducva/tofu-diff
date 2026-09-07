@@ -37,7 +37,7 @@ The Bubble Tea `Model` owns the filtered resource indices, module grouping state
 
 The left panel is the navigation surface. In module-grouped mode (`m`), resources are nested under collapsible module headers (`Space`/`Enter` to toggle) with resource counts, displaying relative resource addresses to optimize narrow panel widths. The right panel renders resource metadata and full attribute values when a resource is selected, or a module change summary and resource roster when a module header is selected. Values are converted to parallel plain and styled lines, JSON is pretty-printed, long content is wrapped, and an LCS calculation classifies unchanged, removed, and added lines for unified-diff rendering.[^tui]
 
-With an item selected, `?` opens a centered overlay action menu while preserving the underlying TUI. `↑`/`↓` or `j`/`k` select either copying the full resource/module address or copying a shell-quoted `tofu plan -target=<address>` command; the selected action's result is shown in a preview at the bottom of the menu. `Enter` performs the copy and `Esc` closes the menu.[^tui]
+With an item selected, `?` opens a centered overlay action menu while preserving the underlying TUI. `↑`/`↓` or `j`/`k` select either copying the full resource/module address or copying a shell-quoted `tofu plan -target=<address>` command (or `tofu plan` for the root module); the selected action's result is shown in a preview at the bottom of the menu. `Enter` performs the copy and `Esc` closes the menu.[^tui]
 
 User-facing controls and the automatic TTY/plain-text selection are summarized in the README. When controls change, update the footer and README together so discoverability matches behavior.[^readme]
 

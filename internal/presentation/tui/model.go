@@ -105,9 +105,17 @@ const (
 	contextMenuCopyPlanCommand
 )
 
-var contextMenuLabels = []string{
-	"Copy full resource name",
-	"Copy tofu plan command",
+func (m *Model) contextMenuLabels() []string {
+	if sel := m.selectedItem(); sel != nil && sel.kind == itemModuleHeader {
+		return []string{
+			"Copy module address",
+			"Copy tofu plan command",
+		}
+	}
+	return []string{
+		"Copy full resource name",
+		"Copy tofu plan command",
+	}
 }
 
 type leftItemKind int
@@ -510,11 +518,6 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				var text string
 				var successMsg string
 				if sel.kind == itemModuleHeader {
-					if sel.module == "(root)" {
-						m.copyStatus = "(root) module has no address"
-						m.refreshViewports()
-						return m, nil
-					}
 					text = sel.module
 					successMsg = "Copied module address!"
 				} else {
@@ -666,7 +669,7 @@ func (m Model) handleContextMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.contextMenuCursor--
 		}
 	case "down", "j":
-		if m.contextMenuCursor < len(contextMenuLabels)-1 {
+		if m.contextMenuCursor < len(m.contextMenuLabels())-1 {
 			m.contextMenuCursor++
 		}
 	case "enter":
@@ -686,12 +689,6 @@ func (m *Model) executeContextMenuItem(item contextMenuItem) {
 	var status string
 
 	if sel.kind == itemModuleHeader {
-		if sel.module == "(root)" {
-			m.copyStatus = "(root) module has no address"
-			m.contextMenuOpen = false
-			m.refreshViewports()
-			return
-		}
 		text = sel.module
 		status = "Copied module address!"
 		if item == contextMenuCopyPlanCommand {
@@ -718,6 +715,9 @@ func (m *Model) executeContextMenuItem(item contextMenuItem) {
 }
 
 func tofuPlanTargetCommand(address string) string {
+	if address == "(root)" || address == "" {
+		return "tofu plan"
+	}
 	return "tofu plan -target=" + shellQuote(address)
 }
 
@@ -1426,20 +1426,17 @@ func cutANSI(s string, left, right int) string {
 func (m *Model) renderContextMenu() string {
 	title := "Resource actions"
 	target := "(no resource selected)"
-	label0 := "Copy full resource name"
-	label1 := "Copy tofu plan command"
 
 	if sel := m.selectedItem(); sel != nil {
 		if sel.kind == itemModuleHeader {
 			title = "Module actions"
 			target = sel.module
-			label0 = "Copy module address"
 		} else {
 			target = m.resources[sel.resourceIndex].Address
 		}
 	}
 
-	labels := []string{label0, label1}
+	labels := m.contextMenuLabels()
 
 	var sb strings.Builder
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title))
@@ -1482,9 +1479,6 @@ func (m *Model) contextMenuPreview() string {
 	}
 
 	if sel.kind == itemModuleHeader {
-		if sel.module == "(root)" {
-			return "(root) module has no target address"
-		}
 		if contextMenuItem(m.contextMenuCursor) == contextMenuCopyPlanCommand {
 			return tofuPlanTargetCommand(sel.module)
 		}

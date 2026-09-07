@@ -419,11 +419,214 @@ func TestModuleContextMenuAndCopy(t *testing.T) {
 		t.Fatalf("expected target command in preview, got:\n%s", m.renderContextMenu())
 	}
 
-	// Press Enter
+	// Press Enter on item 1 (tofu plan command)
 	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = model.(Model)
 	if copied != "tofu plan -target='module.vpc'" {
 		t.Fatalf("expected copied target command, got %q", copied)
 	}
+	if m.contextMenuOpen {
+		t.Fatal("expected context menu to close after enter")
+	}
+
+	// Test first menu item (Copy module address)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if m.contextMenuCursor != 0 {
+		t.Fatalf("expected cursor 0 on reopen, got %d", m.contextMenuCursor)
+	}
+	if !contains(m.renderContextMenu(), "module.vpc") {
+		t.Fatalf("expected module.vpc in preview, got:\n%s", m.renderContextMenu())
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "module.vpc" {
+		t.Fatalf("expected copied %q, got %q", "module.vpc", copied)
+	}
 }
+
+func TestRootModuleContextMenuAndCopy(t *testing.T) {
+	var copied string
+	originalWriteClipboard := writeClipboard
+	writeClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+	defer func() { writeClipboard = originalWriteClipboard }()
+
+	pf := plan.Plan{
+		FormatVersion: "1.0",
+		ResourceChanges: []plan.ResourceChange{
+			{Address: "aws_s3_bucket.main", Change: plan.Change{Actions: []string{"update"}}},
+		},
+	}
+	m := NewWithOptions(pf, true, true)
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	// Cursor is at 0 ((root) module header)
+	if m.items[0].kind != itemModuleHeader || m.items[0].module != "(root)" {
+		t.Fatalf("expected item 0 to be (root) module, got %+v", m.items[0])
+	}
+
+	// Test 'y' copy on (root)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = model.(Model)
+	if copied != "(root)" {
+		t.Fatalf("expected copied %q, got %q", "(root)", copied)
+	}
+	if m.copyStatus != "Copied module address!" {
+		t.Fatalf("unexpected copyStatus %q", m.copyStatus)
+	}
+
+	// Test '?' context menu
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !m.contextMenuOpen {
+		t.Fatal("expected context menu to open for (root)")
+	}
+	if !contains(m.renderContextMenu(), "Module actions") || !contains(m.renderContextMenu(), "(root)") {
+		t.Fatalf("expected module actions and (root) in menu, got:\n%s", m.renderContextMenu())
+	}
+
+	// First item preview should be (root)
+	rendered := m.renderContextMenu()
+	if !contains(rendered, "Preview") || !contains(rendered, "(root)") {
+		t.Fatalf("expected (root) preview, got:\n%s", rendered)
+	}
+
+	// Press Enter to copy module name/address
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "(root)" {
+		t.Fatalf("expected copied (root), got %q", copied)
+	}
+	if m.contextMenuOpen {
+		t.Fatal("expected menu to close")
+	}
+
+	// Re-open and move down to tofu plan command
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	if m.contextMenuCursor != 1 {
+		t.Fatalf("expected cursor 1, got %d", m.contextMenuCursor)
+	}
+	// For root module, plan command preview is "tofu plan"
+	if !contains(m.renderContextMenu(), "tofu plan") {
+		t.Fatalf("expected 'tofu plan' preview for root module, got:\n%s", m.renderContextMenu())
+	}
+
+	// Press Enter to copy "tofu plan"
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "tofu plan" {
+		t.Fatalf("expected copied 'tofu plan', got %q", copied)
+	}
+	if m.copyStatus != "Copied tofu plan command!" {
+		t.Fatalf("unexpected copyStatus %q", m.copyStatus)
+	}
+
+	// Test dismissing context menu with esc
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !m.contextMenuOpen {
+		t.Fatal("expected context menu to open")
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(Model)
+	if m.contextMenuOpen {
+		t.Fatal("expected esc to dismiss context menu")
+	}
+}
+
+func TestMixedModulesContextMenuNavigation(t *testing.T) {
+	var copied string
+	originalWriteClipboard := writeClipboard
+	writeClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+	defer func() { writeClipboard = originalWriteClipboard }()
+
+	pf := plan.Plan{
+		FormatVersion: "1.0",
+		ResourceChanges: []plan.ResourceChange{
+			{Address: "aws_s3_bucket.main", Change: plan.Change{Actions: []string{"update"}}},
+			{Address: "module.vpc.aws_subnet.public", ModuleAddress: "module.vpc", Change: plan.Change{Actions: []string{"create"}}},
+		},
+	}
+	m := NewWithOptions(pf, true, true)
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	// Items should be:
+	// 0: (root) module
+	// 1: aws_s3_bucket.main
+	// 2: module.vpc module
+	// 3: module.vpc.aws_subnet.public
+	if len(m.items) != 4 {
+		t.Fatalf("expected 4 items, got %d", len(m.items))
+	}
+
+	// 0: Root module
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !contains(m.renderContextMenu(), "Module actions") || !contains(m.renderContextMenu(), "(root)") {
+		t.Fatalf("expected root module context menu, got:\n%s", m.renderContextMenu())
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "tofu plan" {
+		t.Fatalf("expected 'tofu plan', got %q", copied)
+	}
+
+	// Move to 1: aws_s3_bucket.main
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !contains(m.renderContextMenu(), "Resource actions") || !contains(m.renderContextMenu(), "aws_s3_bucket.main") {
+		t.Fatalf("expected resource context menu, got:\n%s", m.renderContextMenu())
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = model.(Model)
+
+	// Move to 2: module.vpc
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !contains(m.renderContextMenu(), "Module actions") || !contains(m.renderContextMenu(), "module.vpc") {
+		t.Fatalf("expected module.vpc context menu, got:\n%s", m.renderContextMenu())
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "tofu plan -target='module.vpc'" {
+		t.Fatalf("expected 'tofu plan -target=\\'module.vpc\\'', got %q", copied)
+	}
+
+	// Move to 3: module.vpc.aws_subnet.public
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !contains(m.renderContextMenu(), "Resource actions") || !contains(m.renderContextMenu(), "module.vpc.aws_subnet.public") {
+		t.Fatalf("expected resource context menu, got:\n%s", m.renderContextMenu())
+	}
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "tofu plan -target='module.vpc.aws_subnet.public'" {
+		t.Fatalf("expected 'tofu plan -target=\\'module.vpc.aws_subnet.public\\'', got %q", copied)
+	}
+}
+
+
 
