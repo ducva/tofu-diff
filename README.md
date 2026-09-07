@@ -23,6 +23,20 @@ _Interactive view rendered from the bundled `data/binary.plan` fixture._
 
 ### Install
 
+#### Via install script (installs to `~/.local/bin`)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ducva/tofu-diff/main/install.sh | bash
+```
+
+Or from a local clone:
+
+```bash
+./install.sh
+```
+
+#### Via Go
+
 ```bash
 go install github.com/ducva/tofu-diff@latest
 ```
