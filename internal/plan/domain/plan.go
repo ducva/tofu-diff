@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // Change contains the before and after attribute states of one resource.
 // The maps are kept presentation-neutral; unknown and sensitivity markers are
@@ -37,6 +40,53 @@ type ResourceChange struct {
 	Type          string
 	Name          string
 	Change        Change
+}
+
+// ModuleName returns the module address of the resource, or "(root)" if it belongs
+// to the root module.
+func (rc ResourceChange) ModuleName() string {
+	if rc.ModuleAddress != "" {
+		return rc.ModuleAddress
+	}
+	if strings.HasPrefix(rc.Address, "module.") {
+		if mod := extractModuleAddress(rc.Address); mod != "" {
+			return mod
+		}
+	}
+	return "(root)"
+}
+
+// RelativeAddress returns the resource address relative to its module.
+// For root module resources, it returns the full address.
+func (rc ResourceChange) RelativeAddress() string {
+	mod := rc.ModuleName()
+	if mod == "" || mod == "(root)" {
+		return rc.Address
+	}
+	prefix := mod + "."
+	if strings.HasPrefix(rc.Address, prefix) {
+		return strings.TrimPrefix(rc.Address, prefix)
+	}
+	return rc.Address
+}
+
+func extractModuleAddress(addr string) string {
+	bare := addr
+	if strings.HasSuffix(addr, "]") {
+		if idx := strings.LastIndex(addr, "["); idx >= 0 {
+			bare = addr[:idx]
+		}
+	}
+	lastDot := strings.LastIndex(bare, ".")
+	if lastDot < 0 {
+		return ""
+	}
+	rest := bare[:lastDot]
+	secondLast := strings.LastIndex(rest, ".")
+	if secondLast < 0 {
+		return ""
+	}
+	return rest[:secondLast]
 }
 
 // Plan is the normalized, immutable-by-convention aggregate returned by an

@@ -34,9 +34,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, stdinIsPipe, 
 	}()
 
 	diffOnly := true
+	groupByModule := false
 	flags := flag.NewFlagSet("tofu-diff", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.BoolVar(&diffOnly, "diff-only", true, "show only changed lines/attributes (hide unchanged context)")
+	flags.BoolVar(&groupByModule, "group-by-module", false, "group resources by module")
+	flags.BoolVar(&groupByModule, "group-by-modules", false, "alias for --group-by-module")
+	flags.BoolVar(&groupByModule, "m", false, "alias for --group-by-module")
 	flags.Usage = func() { writeUsage(stdout) }
 
 	if err := flags.Parse(args); err != nil {
@@ -84,9 +88,14 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, stdinIsPipe, 
 
 	var presenter application.Presenter
 	if stdoutIsTerminal {
-		presenter = tuipresenter.Presenter{DiffOnly: diffOnly, Input: stdin, Output: stdout}
+		presenter = tuipresenter.Presenter{
+			DiffOnly:      diffOnly,
+			GroupByModule: groupByModule,
+			Input:         stdin,
+			Output:        stdout,
+		}
 	} else {
-		presenter = textpresenter.NewWithDiffOnly(stdout, diffOnly)
+		presenter = textpresenter.NewWithOptions(stdout, diffOnly, groupByModule)
 	}
 
 	if err := useCase.Execute(source, sourceName, presenter); err != nil {
@@ -97,20 +106,26 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, stdinIsPipe, 
 }
 
 func writeUsage(out io.Writer) {
-	fmt.Fprint(out, `Usage: tofu-diff [--diff-only] [<plan-file>]
+	fmt.Fprint(out, `Usage: tofu-diff [--diff-only] [--group-by-module] [<plan-file>]
 
 View the contents of an OpenTofu JSON or native binary plan file in a human-readable format.
 
 Arguments:
-  <plan-file>   Path to a JSON or native plan file (optional if piped via stdin)
+  <plan-file>          Path to a JSON or native plan file (optional if piped via stdin)
 
 Options:
-  --diff-only   Show only changed lines/attributes (default true)
-                Use --diff-only=false to show full context
-                In TUI, press 'o' to toggle at runtime
+  --diff-only          Show only changed lines/attributes (default true)
+                       Use --diff-only=false to show full context
+                       In TUI, press 'o' to toggle at runtime
+  --group-by-module    Group resources by module (default false)
+                       In TUI, press 'm' to toggle at runtime
+  --group-by-modules   Alias for --group-by-module
+  -m                   Alias for --group-by-module
 
 Examples:
   tofu-diff plan.json
+  tofu-diff --group-by-module plan.json
+  tofu-diff -m plan.json
   tofu-diff --diff-only=false plan.json
   cat plan.json | tofu-diff
   tofu show -json tfplan | tofu-diff

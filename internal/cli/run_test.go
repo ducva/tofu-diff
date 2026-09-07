@@ -14,6 +14,9 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Usage: tofu-diff") {
 		t.Fatalf("help output missing usage: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "--group-by-module") {
+		t.Fatalf("help output missing --group-by-module: %q", stdout.String())
+	}
 }
 
 func TestRunPipedJSON(t *testing.T) {
@@ -26,3 +29,29 @@ func TestRunPipedJSON(t *testing.T) {
 		t.Fatalf("unexpected output %q", got)
 	}
 }
+
+func TestRunGroupByModulePipedJSON(t *testing.T) {
+	input := `{
+		"format_version":"1.0",
+		"resource_changes":[
+			{
+				"address":"module.vpc.aws_subnet.public",
+				"module_address":"module.vpc",
+				"change":{"actions":["create"],"after":{"cidr_block":"10.0.1.0/24"}}
+			},
+			{
+				"address":"aws_s3_bucket.main",
+				"change":{"actions":["create"],"after":{"bucket":"my-bucket"}}
+			}
+		]
+	}`
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--group-by-module"}, strings.NewReader(input), &stdout, &stderr, true, false); code != 0 {
+		t.Fatalf("Run returned %d, want 0: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Module: (root)") || !strings.Contains(out, "Module: module.vpc") {
+		t.Fatalf("expected grouped modules in output, got:\n%s", out)
+	}
+}
+

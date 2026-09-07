@@ -213,3 +213,217 @@ func TestBuildRightContentHidesEmptyAttribute(t *testing.T) {
   // However DiffAttributes would not include an attribute where before==after, so this is edge. We'll test filter logic directly.
   // Just ensure filterToDiffOnly handles all-same case
 }
+
+func TestGroupByModuleDefault(t *testing.T) {
+	pf := plan.Plan{FormatVersion: "1.0"}
+	m := New(pf)
+	if m.groupByModule {
+		t.Fatalf("expected default groupByModule false, got true")
+	}
+	m2 := NewWithOptions(pf, true, true)
+	if !m2.groupByModule {
+		t.Fatalf("expected NewWithOptions with groupByModule=true, got false")
+	}
+	m3 := m.WithGroupByModule(true)
+	if !m3.groupByModule {
+		t.Fatalf("WithGroupByModule true failed")
+	}
+}
+
+func TestToggleM(t *testing.T) {
+	pf := plan.Plan{
+		FormatVersion: "1.0",
+		ResourceChanges: []plan.ResourceChange{
+			{Address: "module.vpc.aws_subnet.public", ModuleAddress: "module.vpc", Change: plan.Change{Actions: []string{"create"}}},
+			{Address: "aws_s3_bucket.main", Change: plan.Change{Actions: []string{"update"}}},
+		},
+	}
+	m := New(pf)
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	if m.groupByModule {
+		t.Fatal("expected groupByModule to start false")
+	}
+
+	// Toggle on with 'm'
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = model.(Model)
+	if !m.groupByModule {
+		t.Fatal("expected groupByModule to be true after toggle")
+	}
+	if m.copyStatus != "Group by module: enabled" {
+		t.Fatalf("unexpected copyStatus %q", m.copyStatus)
+	}
+	if !contains(m.renderHeader(), "MODULES") {
+		t.Fatal("header should contain MODULES badge")
+	}
+	if !contains(m.renderFooter(), "modules") {
+		t.Fatal("footer should contain modules hint")
+	}
+
+	// In grouped mode, left panel should have module headers
+	leftContent := m.buildLeftContent()
+	if !contains(leftContent, "(root)") || !contains(leftContent, "module.vpc") {
+		t.Fatalf("left panel should contain module headers, got:\n%s", leftContent)
+	}
+	// And relative address aws_subnet.public instead of module.vpc.aws_subnet.public
+	if !contains(leftContent, "aws_subnet.public") {
+		t.Fatalf("left panel should contain relative address aws_subnet.public, got:\n%s", leftContent)
+	}
+
+	// Toggle off with 'm'
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = model.(Model)
+	if m.groupByModule {
+		t.Fatal("expected groupByModule to be false after toggle")
+	}
+	if m.copyStatus != "Group by module: disabled" {
+		t.Fatalf("unexpected copyStatus %q", m.copyStatus)
+	}
+	if contains(m.renderHeader(), "MODULES") {
+		t.Fatal("header should not contain MODULES badge when disabled")
+	}
+}
+
+func TestModuleNavigationAndCollapse(t *testing.T) {
+	pf := plan.Plan{
+		FormatVersion: "1.0",
+		ResourceChanges: []plan.ResourceChange{
+			{Address: "module.vpc.aws_subnet.public", ModuleAddress: "module.vpc", Change: plan.Change{Actions: []string{"create"}}},
+			{Address: "aws_s3_bucket.main", Change: plan.Change{Actions: []string{"update"}}},
+		},
+	}
+	m := NewWithOptions(pf, true, true)
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	// Items should be:
+	// 0: Module (root)
+	// 1: Resource aws_s3_bucket.main
+	// 2: Module module.vpc
+	// 3: Resource module.vpc.aws_subnet.public
+	if len(m.items) != 4 {
+		t.Fatalf("expected 4 items (2 modules + 2 resources), got %d", len(m.items))
+	}
+	if m.items[0].kind != itemModuleHeader || m.items[0].module != "(root)" {
+		t.Fatalf("expected item 0 to be (root) module header, got %+v", m.items[0])
+	}
+	if m.items[1].kind != itemResource {
+		t.Fatalf("expected item 1 to be resource, got %+v", m.items[1])
+	}
+	if m.items[2].kind != itemModuleHeader || m.items[2].module != "module.vpc" {
+		t.Fatalf("expected item 2 to be module.vpc header, got %+v", m.items[2])
+	}
+	if m.items[3].kind != itemResource {
+		t.Fatalf("expected item 3 to be resource, got %+v", m.items[3])
+	}
+
+	// Press Space on item 0 ((root) module header) -> collapses (root)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	m = model.(Model)
+	if !m.collapsedModules["(root)"] {
+		t.Fatal("expected (root) module to be collapsed")
+	}
+	// After collapsing (root), items should be 3:
+	// 0: Module (root)
+	// 1: Module module.vpc
+	// 2: Resource module.vpc.aws_subnet.public
+	if len(m.items) != 3 {
+		t.Fatalf("expected 3 items after collapsing (root), got %d", len(m.items))
+	}
+
+	// Press Space again -> expands (root)
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	m = model.(Model)
+	if m.collapsedModules["(root)"] {
+		t.Fatal("expected (root) module to be expanded")
+	}
+	if len(m.items) != 4 {
+		t.Fatalf("expected 4 items after expanding (root), got %d", len(m.items))
+	}
+}
+
+func TestModuleRightPanelSummary(t *testing.T) {
+	pf := plan.Plan{
+		FormatVersion: "1.0",
+		ResourceChanges: []plan.ResourceChange{
+			{Address: "module.vpc.aws_subnet.public", ModuleAddress: "module.vpc", Change: plan.Change{Actions: []string{"create"}}},
+			{Address: "module.vpc.aws_vpc.main", ModuleAddress: "module.vpc", Change: plan.Change{Actions: []string{"update"}}},
+		},
+	}
+	m := NewWithOptions(pf, true, true)
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	// Cursor is at 0 (module.vpc header)
+	rightContent := m.buildRightContent()
+	if !contains(rightContent, "MODULE") {
+		t.Fatalf("right panel should contain MODULE header, got:\n%s", rightContent)
+	}
+	if !contains(rightContent, "module.vpc") {
+		t.Fatalf("right panel should contain module.vpc, got:\n%s", rightContent)
+	}
+	if !contains(rightContent, "RESOURCES (2)") {
+		t.Fatalf("right panel should show resource count, got:\n%s", rightContent)
+	}
+	if !contains(rightContent, "module.vpc.aws_subnet.public") || !contains(rightContent, "module.vpc.aws_vpc.main") {
+		t.Fatalf("right panel should list resources in module, got:\n%s", rightContent)
+	}
+}
+
+func TestModuleContextMenuAndCopy(t *testing.T) {
+	var copied string
+	originalWriteClipboard := writeClipboard
+	writeClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+	defer func() { writeClipboard = originalWriteClipboard }()
+
+	pf := plan.Plan{
+		FormatVersion: "1.0",
+		ResourceChanges: []plan.ResourceChange{
+			{Address: "module.vpc.aws_subnet.public", ModuleAddress: "module.vpc", Change: plan.Change{Actions: []string{"create"}}},
+		},
+	}
+	m := NewWithOptions(pf, true, true)
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	// Cursor is at 0 (module.vpc header)
+	// Test 'y' copy
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = model.(Model)
+	if copied != "module.vpc" {
+		t.Fatalf("expected copied %q, got %q", "module.vpc", copied)
+	}
+	if m.copyStatus != "Copied module address!" {
+		t.Fatalf("unexpected copyStatus %q", m.copyStatus)
+	}
+
+	// Test '?' context menu
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = model.(Model)
+	if !m.contextMenuOpen {
+		t.Fatal("expected context menu to open")
+	}
+	if !contains(m.View(), "Module actions") || !contains(m.View(), "Copy module address") {
+		t.Fatalf("expected module actions in menu, got:\n%s", m.View())
+	}
+
+	// Move down to target plan command
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = model.(Model)
+	if !contains(m.renderContextMenu(), "tofu plan -target='module.vpc'") {
+		t.Fatalf("expected target command in preview, got:\n%s", m.renderContextMenu())
+	}
+
+	// Press Enter
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = model.(Model)
+	if copied != "tofu plan -target='module.vpc'" {
+		t.Fatalf("expected copied target command, got %q", copied)
+	}
+}
+

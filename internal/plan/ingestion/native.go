@@ -48,8 +48,10 @@ func readZipEntry(f *zip.File) ([]byte, error) {
 // e.g. "module.foo.snowflake_table.this[\"key\"]" → type="snowflake_table", name="this"
 func parseAddress(addr string) (typ, name, moduleAddr string) {
 	bare := addr
-	if idx := strings.Index(addr, "["); idx >= 0 {
-		bare = addr[:idx]
+	if strings.HasSuffix(addr, "]") {
+		if idx := strings.LastIndex(addr, "["); idx >= 0 {
+			bare = addr[:idx]
+		}
 	}
 	lastDot := strings.LastIndex(bare, ".")
 	if lastDot < 0 {
