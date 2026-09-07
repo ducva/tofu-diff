@@ -65,10 +65,10 @@ tofu-diff tfplan
 
 | Key           | Action                         |
 | ------------- | ------------------------------ |
-| `↑` / `↓` or `j` / `k` | Navigate resources   |
+| `↑` / `↓` or `j` / `k` | Navigate items                 |
 | `Space`       | Expand / collapse              |
-| `y`           | Copy the selected resource     |
-| `?`           | Open the selected resource menu |
+| `y`           | Copy the selected item address |
+| `?`           | Open context menu for selected item |
 | `[` / `]`     | Resize panels                  |
 | `Tab`         | Switch panel                   |
 | `E` / `C`     | Expand / collapse all          |
