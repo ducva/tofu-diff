@@ -11,9 +11,9 @@ type jsonChange struct {
 	Actions         []string                   `json:"actions"`
 	Before          map[string]json.RawMessage `json:"before"`
 	After           map[string]json.RawMessage `json:"after"`
-	AfterUnknown    map[string]bool            `json:"after_unknown"`
-	BeforeSensitive map[string]bool            `json:"before_sensitive"`
-	AfterSensitive  map[string]bool            `json:"after_sensitive"`
+	AfterUnknown    json.RawMessage            `json:"after_unknown"`
+	BeforeSensitive json.RawMessage            `json:"before_sensitive"`
+	AfterSensitive  json.RawMessage            `json:"after_sensitive"`
 }
 
 type jsonResourceChange struct {
@@ -56,11 +56,53 @@ func (p jsonPlan) toDomain() domain.Plan {
 				Actions:         rc.Change.Actions,
 				Before:          rc.Change.Before,
 				After:           rc.Change.After,
-				AfterUnknown:    rc.Change.AfterUnknown,
-				BeforeSensitive: rc.Change.BeforeSensitive,
-				AfterSensitive:  rc.Change.AfterSensitive,
+				AfterUnknown:    parseTopLevelBoolMap(rc.Change.AfterUnknown),
+				BeforeSensitive: parseTopLevelBoolMap(rc.Change.BeforeSensitive),
+				AfterSensitive:  parseTopLevelBoolMap(rc.Change.AfterSensitive),
 			},
 		})
 	}
 	return domain.Plan{FormatVersion: p.FormatVersion, ResourceChanges: resources}
+}
+
+func parseTopLevelBoolMap(raw json.RawMessage) map[string]bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var v interface{}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case map[string]interface{}:
+		result := make(map[string]bool, len(val))
+		for k, child := range val {
+			if hasTrue(child) {
+				result[k] = true
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func hasTrue(v interface{}) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case []interface{}:
+		for _, elem := range val {
+			if hasTrue(elem) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		for _, elem := range val {
+			if hasTrue(elem) {
+				return true
+			}
+		}
+	}
+	return false
 }
