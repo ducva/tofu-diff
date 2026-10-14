@@ -2,7 +2,7 @@
 
 ## 2026-10-14
 
-* **Forget action support**: Supported OpenTofu native protobuf action code 8 (`FORGET`) and JSON action `["forget"]` produced by `removed` blocks with `lifecycle { destroy = false }`. Added `ActionForget` domain action, text presenter rendering (`[.] forget:`), and TUI action filtering / summary.
+* **Complete OpenTofu actions support**: Extended domain model, ingestion, plain-text renderer, and interactive TUI to support all OpenTofu actions: `create` (`[+]`), `update` (`[~]`), `delete` (`[-]`), `replace` (`[±]`), `forget` (`[.]`), `read` (`[<=]`), and `open` (`[⁐]`). Mapped native protobuf codes `2` (read), `8` (forget), and `9` (open), added TUI filter hotkeys `1`-`7`, and updated action summaries.
 
 ## 2026-09-07
 

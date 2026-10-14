@@ -119,6 +119,24 @@ func (r *PlanRenderer) renderResource(w io.Writer, rc domain.ResourceChange) {
 			val := valuefmt.Format(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
 			fmt.Fprintf(w, "  . %s = %s\n", key, val)
 		}
+	case domain.ActionRead:
+		attrs := rc.Change.After
+		if len(attrs) == 0 {
+			attrs = rc.Change.Before
+		}
+		for _, key := range sortedKeys(attrs) {
+			if rc.Change.AfterUnknown[key] {
+				fmt.Fprintf(w, "  <= %s = (known after apply)\n", key)
+			} else {
+				val := valuefmt.Format(attrs[key], rc.Change.AfterSensitive[key] || rc.Change.BeforeSensitive[key])
+				fmt.Fprintf(w, "  <= %s = %s\n", key, val)
+			}
+		}
+	case domain.ActionOpen:
+		for _, key := range sortedKeys(rc.Change.After) {
+			val := valuefmt.Format(rc.Change.After[key], rc.Change.AfterSensitive[key])
+			fmt.Fprintf(w, "  ⁐ %s = %s\n", key, val)
+		}
 	case domain.ActionUpdate, domain.ActionReplace:
 		if r.diffOnly {
 			for _, d := range domain.DiffAttributes(rc.Change) {
@@ -177,6 +195,10 @@ func (r *PlanRenderer) actionLabel(action domain.ActionType) string {
 		return "[±] replace:"
 	case domain.ActionForget:
 		return "[.] forget:"
+	case domain.ActionRead:
+		return "[<=] read:"
+	case domain.ActionOpen:
+		return "[⁐] open:"
 	default:
 		return "[?] unknown:"
 	}

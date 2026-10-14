@@ -12,6 +12,8 @@ const (
 	ActionReplace ActionType = "replace"
 	ActionNoOp    ActionType = "no-op"
 	ActionForget  ActionType = "forget"
+	ActionRead    ActionType = "read"
+	ActionOpen    ActionType = "open"
 )
 
 // NormalizeAction translates an OpenTofu action sequence into the domain action.
@@ -30,7 +32,11 @@ func NormalizeAction(actions []string) (ActionType, error) {
 			return ActionDelete, nil
 		case "forget":
 			return ActionForget, nil
-		case "no-op", "read":
+		case "read":
+			return ActionRead, nil
+		case "open":
+			return ActionOpen, nil
+		case "no-op":
 			return ActionNoOp, nil
 		default:
 			return "", fmt.Errorf("unsupported action %q", actions[0])

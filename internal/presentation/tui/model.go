@@ -22,6 +22,8 @@ var (
 	clrDelete  = lipgloss.Color("9")
 	clrReplace = lipgloss.Color("141")
 	clrForget  = lipgloss.Color("204")
+	clrRead    = lipgloss.Color("39")
+	clrOpen    = lipgloss.Color("147")
 	clrMuted   = lipgloss.Color("240")
 	clrAccent  = lipgloss.Color("39")
 	clrBorder  = lipgloss.Color("238")
@@ -52,6 +54,10 @@ func actionColor(a plan.ActionType) lipgloss.Color {
 		return clrReplace
 	case plan.ActionForget:
 		return clrForget
+	case plan.ActionRead:
+		return clrRead
+	case plan.ActionOpen:
+		return clrOpen
 	default:
 		return clrMuted
 	}
@@ -69,6 +75,10 @@ func actionSym(a plan.ActionType) string {
 		return "[±]"
 	case plan.ActionForget:
 		return "[.]"
+	case plan.ActionRead:
+		return "[<=]"
+	case plan.ActionOpen:
+		return "[⁐]"
 	default:
 		return "[?]"
 	}
@@ -86,6 +96,10 @@ func actionName(a plan.ActionType) string {
 		return "replace"
 	case plan.ActionForget:
 		return "forget"
+	case plan.ActionRead:
+		return "read"
+	case plan.ActionOpen:
+		return "open"
 	default:
 		return "unknown"
 	}
@@ -104,6 +118,8 @@ type ActionSummary struct {
 	Delete  int
 	Replace int
 	Forget  int
+	Read    int
+	Open    int
 }
 
 type contextMenuItem int
@@ -229,6 +245,10 @@ func NewWithOptions(pf plan.Plan, diffOnly, groupByModule bool) Model {
 			summary.Replace++
 		case plan.ActionForget:
 			summary.Forget++
+		case plan.ActionRead:
+			summary.Read++
+		case plan.ActionOpen:
+			summary.Open++
 		}
 	}
 
@@ -648,6 +668,18 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rightVP.GotoTop()
 		m.refreshViewports()
 
+	case "6":
+		m.filters[plan.ActionRead] = !m.filters[plan.ActionRead]
+		m.refilter()
+		m.rightVP.GotoTop()
+		m.refreshViewports()
+
+	case "7":
+		m.filters[plan.ActionOpen] = !m.filters[plan.ActionOpen]
+		m.refilter()
+		m.rightVP.GotoTop()
+		m.refreshViewports()
+
 	case "o", "O":
 		m.diffOnly = !m.diffOnly
 		if m.diffOnly {
@@ -958,6 +990,10 @@ func (m *Model) buildModuleRightContent(mod string) string {
 				s.Replace++
 			case plan.ActionForget:
 				s.Forget++
+			case plan.ActionRead:
+				s.Read++
+			case plan.ActionOpen:
+				s.Open++
 			}
 		}
 	}
@@ -977,6 +1013,12 @@ func (m *Model) buildModuleRightContent(mod string) string {
 	}
 	if s.Forget > 0 {
 		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrForget).Render(fmt.Sprintf("%d to forget", s.Forget)))
+	}
+	if s.Read > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrRead).Render(fmt.Sprintf("%d to read", s.Read)))
+	}
+	if s.Open > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrOpen).Render(fmt.Sprintf("%d to open", s.Open)))
 	}
 	changesStr := strings.Join(summaryParts, ", ")
 	if changesStr == "" {
@@ -1531,6 +1573,12 @@ func (m *Model) renderHeader() string {
 	if s.Forget > 0 {
 		parts = append(parts, lipgloss.NewStyle().Foreground(clrForget).Render(fmt.Sprintf("  %d to forget", s.Forget)))
 	}
+	if s.Read > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(clrRead).Render(fmt.Sprintf("  %d to read", s.Read)))
+	}
+	if s.Open > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(clrOpen).Render(fmt.Sprintf("  %d to open", s.Open)))
+	}
 
 	var base string
 	if len(parts) == 0 {
@@ -1572,6 +1620,8 @@ func (m *Model) renderSearchBar() string {
 		{plan.ActionDelete, "[-]"},
 		{plan.ActionReplace, "[±]"},
 		{plan.ActionForget, "[.]"},
+		{plan.ActionRead, "[<=]"},
+		{plan.ActionOpen, "[⁐]"},
 	}
 
 	var filterParts []string
@@ -1608,7 +1658,7 @@ func (m *Model) renderFooter() string {
 		{"[/]", "resize"},
 		{"Tab", "switch panel"},
 		{"E/C", "expand/collapse all"},
-		{"1-5", "filter by action"},
+		{"1-7", "filter by action"},
 		{"/", "search"},
 		{"o", "diff-only"},
 		{"m", "modules"},

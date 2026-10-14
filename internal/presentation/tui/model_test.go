@@ -682,5 +682,66 @@ func TestActionForgetSupport(t *testing.T) {
 	}
 }
 
+func TestActionReadAndOpenSupport(t *testing.T) {
+	rcRead := plan.ResourceChange{
+		Address: "data.aws_ami.ubuntu",
+		Change: plan.Change{
+			Actions: []string{"read"},
+			After:   map[string]json.RawMessage{"id": json.RawMessage(`"ami-123"`)},
+		},
+	}
+	rcOpen := plan.ResourceChange{
+		Address: "ephemeral_secret.token",
+		Change: plan.Change{
+			Actions: []string{"open"},
+			After:   map[string]json.RawMessage{"val": json.RawMessage(`"secret"`)},
+		},
+	}
+	pf := plan.Plan{
+		FormatVersion:   "1.0",
+		ResourceChanges: []plan.ResourceChange{rcRead, rcOpen},
+	}
+
+	m := New(pf)
+	if m.summary.Read != 1 || m.summary.Open != 1 {
+		t.Fatalf("expected Read==1 and Open==1, got Read=%d, Open=%d", m.summary.Read, m.summary.Open)
+	}
+
+	h := m.renderHeader()
+	if !contains(h, "1 to read") || !contains(h, "1 to open") {
+		t.Fatalf("expected header to contain '1 to read' and '1 to open', got %q", h)
+	}
+
+	sb := m.renderSearchBar()
+	if !contains(sb, "[<=]") || !contains(sb, "[⁐]") {
+		t.Fatalf("expected search bar to contain '[<=]' and '[⁐]', got %q", sb)
+	}
+
+	// Make ready and test key '6' (read) and '7' (open)
+	m.width = 100
+	m.height = 30
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	if len(m.filtered) != 2 {
+		t.Fatalf("expected 2 filtered items, got %d", len(m.filtered))
+	}
+
+	// Toggle filter 6 (read) -> should only keep read item
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}})
+	m = model.(Model)
+	if len(m.filtered) != 1 {
+		t.Fatalf("expected 1 filtered item when filtering by read, got %d", len(m.filtered))
+	}
+
+	// Also toggle filter 7 (open) -> should keep both read and open
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'7'}})
+	m = model.(Model)
+	if len(m.filtered) != 2 {
+		t.Fatalf("expected 2 filtered items when filtering by read+open, got %d", len(m.filtered))
+	}
+}
+
+
 
 

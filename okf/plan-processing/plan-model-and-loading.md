@@ -25,7 +25,7 @@ sources:
 
 `Plan` contains OpenTofu's format version and a list of `ResourceChange` values. Each resource has identity fields plus a `Change` holding action names, before/after JSON attributes, unknown-after markers, and sensitivity maps. `AttributeDiff` is the presentation-neutral comparison shape used by both interfaces.[^plan]
 
-`NormalizeAction` maps supported source action sequences into create, update, delete, replace, forget, or no-op. Only OpenTofu's two ordered replacement pairs are accepted; unsupported actions fail domain validation.[^plan]
+`NormalizeAction` maps supported source action sequences into create, update, delete, replace, forget, read, open, or no-op. Only OpenTofu's two ordered replacement pairs are accepted; unsupported actions fail domain validation.[^plan]
 
 ## Loading formats
 

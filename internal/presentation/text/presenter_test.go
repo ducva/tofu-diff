@@ -143,3 +143,49 @@ func TestRenderActionForget(t *testing.T) {
 	}
 }
 
+func TestRenderActionRead(t *testing.T) {
+	rc := domain.ResourceChange{
+		Address: "data.aws_ami.ubuntu",
+		Change: domain.Change{
+			Actions: []string{"read"},
+			After:   map[string]json.RawMessage{"id": json.RawMessage(`"ami-12345"`)},
+		},
+	}
+	pf := domain.Plan{FormatVersion: "1.0", ResourceChanges: []domain.ResourceChange{rc}}
+	var buf bytes.Buffer
+	r := New(&buf)
+	if err := r.Render(pf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !contains(out, "[<=] read: data.aws_ami.ubuntu") {
+		t.Fatalf("expected read label, got:\n%s", out)
+	}
+	if !contains(out, "  <= id = ami-12345") {
+		t.Fatalf("expected attribute with <= prefix, got:\n%s", out)
+	}
+}
+
+func TestRenderActionOpen(t *testing.T) {
+	rc := domain.ResourceChange{
+		Address: "ephemeral_secret.test",
+		Change: domain.Change{
+			Actions: []string{"open"},
+			After:   map[string]json.RawMessage{"token": json.RawMessage(`"xyz"`)},
+		},
+	}
+	pf := domain.Plan{FormatVersion: "1.0", ResourceChanges: []domain.ResourceChange{rc}}
+	var buf bytes.Buffer
+	r := New(&buf)
+	if err := r.Render(pf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !contains(out, "[⁐] open: ephemeral_secret.test") {
+		t.Fatalf("expected open label, got:\n%s", out)
+	}
+	if !contains(out, "  ⁐ token = xyz") {
+		t.Fatalf("expected attribute with ⁐ prefix, got:\n%s", out)
+	}
+}
+

@@ -201,6 +201,8 @@ func protoActionsToActions(action uint64) ([]string, error) {
 		return []string{"create", "delete"}, nil
 	case 8: // FORGET
 		return []string{"forget"}, nil
+	case 9: // OPEN
+		return []string{"open"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported native plan action code %d", action)
 	}
@@ -576,6 +578,7 @@ func decodeChange(data []byte) (action uint64, beforeMp, afterMp []byte, beforeS
 		if len(values) > 0 {
 			beforeMp = values[0]
 		}
+	case 9: // OPEN — ephemeral resources do not persist values in plans
 	}
 
 	return action, beforeMp, afterMp, beforeSens, afterSens, nil

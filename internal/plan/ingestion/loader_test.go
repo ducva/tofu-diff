@@ -106,6 +106,7 @@ func TestProtoActionsToActions(t *testing.T) {
 		{code: 6, want: []string{"delete", "create"}},
 		{code: 7, want: []string{"create", "delete"}},
 		{code: 8, want: []string{"forget"}},
+		{code: 9, want: []string{"open"}},
 		{code: 4, wantErr: true},
 		{code: 99, wantErr: true},
 	}
