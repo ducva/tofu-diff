@@ -13,6 +13,7 @@ func TestNormalizeAction(t *testing.T) {
 		{name: "create", actions: []string{"create"}, want: ActionCreate},
 		{name: "update", actions: []string{"update"}, want: ActionUpdate},
 		{name: "delete", actions: []string{"delete"}, want: ActionDelete},
+		{name: "forget", actions: []string{"forget"}, want: ActionForget},
 		{name: "no-op", actions: []string{"no-op"}, want: ActionNoOp},
 		{name: "read", actions: []string{"read"}, want: ActionNoOp},
 		{name: "destroy then create", actions: []string{"delete", "create"}, want: ActionReplace},

@@ -92,3 +92,61 @@ func TestParseAddress(t *testing.T) {
 	}
 }
 
+func TestProtoActionsToActions(t *testing.T) {
+	tests := []struct {
+		code    uint64
+		want    []string
+		wantErr bool
+	}{
+		{code: 0, want: []string{"no-op"}},
+		{code: 1, want: []string{"create"}},
+		{code: 2, want: []string{"read"}},
+		{code: 3, want: []string{"update"}},
+		{code: 5, want: []string{"delete"}},
+		{code: 6, want: []string{"delete", "create"}},
+		{code: 7, want: []string{"create", "delete"}},
+		{code: 8, want: []string{"forget"}},
+		{code: 4, wantErr: true},
+		{code: 99, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		got, err := protoActionsToActions(tt.code)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("protoActionsToActions(%d) expected error, got nil", tt.code)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("protoActionsToActions(%d) unexpected error: %v", tt.code, err)
+			continue
+		}
+		if len(got) != len(tt.want) {
+			t.Errorf("protoActionsToActions(%d) = %v, want %v", tt.code, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("protoActionsToActions(%d)[%d] = %q, want %q", tt.code, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestLoadActionCode8Plan(t *testing.T) {
+	plan, err := Load("../../../data/action_code_8.plan")
+	if err != nil {
+		t.Fatalf("failed to load action_code_8.plan: %v", err)
+	}
+	var forgetCount int
+	for _, rc := range plan.ResourceChanges {
+		if rc.Change.NormalizedAction() == domain.ActionForget {
+			forgetCount++
+		}
+	}
+	if forgetCount == 0 {
+		t.Fatalf("expected at least one resource with ActionForget, got 0")
+	}
+}
+

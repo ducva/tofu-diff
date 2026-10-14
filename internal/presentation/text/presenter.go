@@ -114,6 +114,11 @@ func (r *PlanRenderer) renderResource(w io.Writer, rc domain.ResourceChange) {
 			val := valuefmt.Format(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
 			fmt.Fprintf(w, "  - %s = %s\n", key, val)
 		}
+	case domain.ActionForget:
+		for _, key := range sortedKeys(rc.Change.Before) {
+			val := valuefmt.Format(rc.Change.Before[key], rc.Change.BeforeSensitive[key])
+			fmt.Fprintf(w, "  . %s = %s\n", key, val)
+		}
 	case domain.ActionUpdate, domain.ActionReplace:
 		if r.diffOnly {
 			for _, d := range domain.DiffAttributes(rc.Change) {
@@ -170,6 +175,8 @@ func (r *PlanRenderer) actionLabel(action domain.ActionType) string {
 		return "[~] update:"
 	case domain.ActionReplace:
 		return "[±] replace:"
+	case domain.ActionForget:
+		return "[.] forget:"
 	default:
 		return "[?] unknown:"
 	}
