@@ -1,6 +1,7 @@
 package tui
 
 import (
+  "encoding/json"
   "testing"
   plan "github.com/ducva/tofu-diff/internal/plan/domain"
   tea "github.com/charmbracelet/bubbletea"
@@ -625,6 +626,59 @@ func TestMixedModulesContextMenuNavigation(t *testing.T) {
 	m = model.(Model)
 	if copied != "tofu plan -target='module.vpc.aws_subnet.public'" {
 		t.Fatalf("expected 'tofu plan -target=\\'module.vpc.aws_subnet.public\\'', got %q", copied)
+	}
+}
+
+func TestActionForgetSupport(t *testing.T) {
+	rc := plan.ResourceChange{
+		Address: "snowflake_user.cortex_analyst",
+		Change: plan.Change{
+			Actions: []string{"forget"},
+			Before:  map[string]json.RawMessage{"name": json.RawMessage(`"cortex_analyst"`)},
+		},
+	}
+	pf := plan.Plan{
+		FormatVersion:   "1.0",
+		ResourceChanges: []plan.ResourceChange{rc},
+	}
+
+	m := New(pf)
+	if m.summary.Forget != 1 {
+		t.Fatalf("expected summary.Forget == 1, got %d", m.summary.Forget)
+	}
+
+	h := m.renderHeader()
+	if !contains(h, "1 to forget") {
+		t.Fatalf("expected header to contain '1 to forget', got %q", h)
+	}
+
+	sb := m.renderSearchBar()
+	if !contains(sb, "[.]") {
+		t.Fatalf("expected search bar to contain '[.]', got %q", sb)
+	}
+
+	// Make ready and test key '5' filter
+	m.width = 100
+	m.height = 30
+	model, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = model.(Model)
+
+	if len(m.filtered) != 1 {
+		t.Fatalf("expected 1 filtered item, got %d", len(m.filtered))
+	}
+
+	// Toggle filter 1 (create) -> should filter out forget
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	m = model.(Model)
+	if len(m.filtered) != 0 {
+		t.Fatalf("expected 0 filtered items when filtering by create, got %d", len(m.filtered))
+	}
+
+	// Toggle filter 5 (forget) -> should include forget
+	model, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	m = model.(Model)
+	if len(m.filtered) != 1 {
+		t.Fatalf("expected 1 filtered item when filtering by forget, got %d", len(m.filtered))
 	}
 }
 

@@ -1,5 +1,9 @@
 # Bundle update log
 
+## 2026-10-14
+
+* **Forget action support**: Supported OpenTofu native protobuf action code 8 (`FORGET`) and JSON action `["forget"]` produced by `removed` blocks with `lifecycle { destroy = false }`. Added `ActionForget` domain action, text presenter rendering (`[.] forget:`), and TUI action filtering / summary.
+
 ## 2026-09-07
 
 * **Module context menu actions**: Unified context menu (`?`) and quick copy (`y`) actions across resource and module items, providing module address and `tofu plan -target=<module>` (or `tofu plan` for root module) copying with live previews.

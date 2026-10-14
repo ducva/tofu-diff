@@ -21,6 +21,7 @@ var (
 	clrUpdate  = lipgloss.Color("214")
 	clrDelete  = lipgloss.Color("9")
 	clrReplace = lipgloss.Color("141")
+	clrForget  = lipgloss.Color("204")
 	clrMuted   = lipgloss.Color("240")
 	clrAccent  = lipgloss.Color("39")
 	clrBorder  = lipgloss.Color("238")
@@ -49,6 +50,8 @@ func actionColor(a plan.ActionType) lipgloss.Color {
 		return clrDelete
 	case plan.ActionReplace:
 		return clrReplace
+	case plan.ActionForget:
+		return clrForget
 	default:
 		return clrMuted
 	}
@@ -64,6 +67,8 @@ func actionSym(a plan.ActionType) string {
 		return "[-]"
 	case plan.ActionReplace:
 		return "[±]"
+	case plan.ActionForget:
+		return "[.]"
 	default:
 		return "[?]"
 	}
@@ -79,6 +84,8 @@ func actionName(a plan.ActionType) string {
 		return "destroy"
 	case plan.ActionReplace:
 		return "replace"
+	case plan.ActionForget:
+		return "forget"
 	default:
 		return "unknown"
 	}
@@ -96,6 +103,7 @@ type ActionSummary struct {
 	Update  int
 	Delete  int
 	Replace int
+	Forget  int
 }
 
 type contextMenuItem int
@@ -219,6 +227,8 @@ func NewWithOptions(pf plan.Plan, diffOnly, groupByModule bool) Model {
 			summary.Delete++
 		case plan.ActionReplace:
 			summary.Replace++
+		case plan.ActionForget:
+			summary.Forget++
 		}
 	}
 
@@ -632,6 +642,12 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rightVP.GotoTop()
 		m.refreshViewports()
 
+	case "5":
+		m.filters[plan.ActionForget] = !m.filters[plan.ActionForget]
+		m.refilter()
+		m.rightVP.GotoTop()
+		m.refreshViewports()
+
 	case "o", "O":
 		m.diffOnly = !m.diffOnly
 		if m.diffOnly {
@@ -940,6 +956,8 @@ func (m *Model) buildModuleRightContent(mod string) string {
 				s.Delete++
 			case plan.ActionReplace:
 				s.Replace++
+			case plan.ActionForget:
+				s.Forget++
 			}
 		}
 	}
@@ -956,6 +974,9 @@ func (m *Model) buildModuleRightContent(mod string) string {
 	}
 	if s.Replace > 0 {
 		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrReplace).Render(fmt.Sprintf("%d to replace", s.Replace)))
+	}
+	if s.Forget > 0 {
+		summaryParts = append(summaryParts, lipgloss.NewStyle().Foreground(clrForget).Render(fmt.Sprintf("%d to forget", s.Forget)))
 	}
 	changesStr := strings.Join(summaryParts, ", ")
 	if changesStr == "" {
@@ -1507,6 +1528,9 @@ func (m *Model) renderHeader() string {
 	if s.Replace > 0 {
 		parts = append(parts, lipgloss.NewStyle().Foreground(clrReplace).Render(fmt.Sprintf("  %d to replace", s.Replace)))
 	}
+	if s.Forget > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(clrForget).Render(fmt.Sprintf("  %d to forget", s.Forget)))
+	}
 
 	var base string
 	if len(parts) == 0 {
@@ -1547,6 +1571,7 @@ func (m *Model) renderSearchBar() string {
 		{plan.ActionUpdate, "[~]"},
 		{plan.ActionDelete, "[-]"},
 		{plan.ActionReplace, "[±]"},
+		{plan.ActionForget, "[.]"},
 	}
 
 	var filterParts []string
@@ -1583,7 +1608,7 @@ func (m *Model) renderFooter() string {
 		{"[/]", "resize"},
 		{"Tab", "switch panel"},
 		{"E/C", "expand/collapse all"},
-		{"1-4", "filter by action"},
+		{"1-5", "filter by action"},
 		{"/", "search"},
 		{"o", "diff-only"},
 		{"m", "modules"},

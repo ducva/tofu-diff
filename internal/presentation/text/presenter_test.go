@@ -120,3 +120,26 @@ func TestRenderGroupByModule(t *testing.T) {
 	}
 }
 
+func TestRenderActionForget(t *testing.T) {
+	rc := domain.ResourceChange{
+		Address: "snowflake_user.cortex_analyst",
+		Change: domain.Change{
+			Actions: []string{"forget"},
+			Before:  map[string]json.RawMessage{"name": json.RawMessage(`"cortex_analyst"`)},
+		},
+	}
+	pf := domain.Plan{FormatVersion: "1.0", ResourceChanges: []domain.ResourceChange{rc}}
+	var buf bytes.Buffer
+	r := New(&buf)
+	if err := r.Render(pf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !contains(out, "[.] forget: snowflake_user.cortex_analyst") {
+		t.Fatalf("expected forget label, got:\n%s", out)
+	}
+	if !contains(out, "  . name = cortex_analyst") {
+		t.Fatalf("expected attribute with dot prefix, got:\n%s", out)
+	}
+}
+

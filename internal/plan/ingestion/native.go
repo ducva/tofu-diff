@@ -199,6 +199,8 @@ func protoActionsToActions(action uint64) ([]string, error) {
 		return []string{"delete", "create"}, nil
 	case 7: // CREATE_THEN_DELETE
 		return []string{"create", "delete"}, nil
+	case 8: // FORGET
+		return []string{"forget"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported native plan action code %d", action)
 	}
@@ -538,6 +540,13 @@ func decodeChange(data []byte) (action uint64, beforeMp, afterMp []byte, beforeS
 		if len(values) > 0 {
 			afterMp = values[0]
 		}
+	case 2: // READ — values[0] is before, values[1] is after
+		if len(values) > 0 {
+			beforeMp = values[0]
+		}
+		if len(values) > 1 {
+			afterMp = values[1]
+		}
 	case 3: // UPDATE — values[0] is before, values[1] is after
 		if len(values) > 0 {
 			beforeMp = values[0]
@@ -562,6 +571,10 @@ func decodeChange(data []byte) (action uint64, beforeMp, afterMp []byte, beforeS
 		}
 		if len(values) > 1 {
 			beforeMp = values[1]
+		}
+	case 8: // FORGET — values[0] is the before (existing) value
+		if len(values) > 0 {
+			beforeMp = values[0]
 		}
 	}
 
