@@ -65,8 +65,24 @@ func parseAddress(addr string) (typ, name, moduleAddr string) {
 		return typ, name, ""
 	}
 	typ = rest[secondLast+1:]
-	moduleAddr = rest[:secondLast]
+	moduleAddr = stripResourceModePrefix(rest[:secondLast])
 	return typ, name, moduleAddr
+}
+
+func stripResourceModePrefix(prefix string) string {
+	for _, mode := range []string{"data", "ephemeral"} {
+		if prefix == mode {
+			return ""
+		}
+		suffix := "." + mode
+		if strings.HasSuffix(prefix, suffix) {
+			cand := strings.TrimSuffix(prefix, suffix)
+			if cand != "module" && !strings.HasSuffix(cand, ".module") {
+				return cand
+			}
+		}
+	}
+	return prefix
 }
 
 // decodeProtoPathSet decodes a PathSet message (repeated Path) into a set of
@@ -218,6 +234,10 @@ func decodeMsgpackAttrs(mpData []byte) (map[string]json.RawMessage, map[string]b
 	var v interface{}
 	if err := msgpack.Unmarshal(mpData, &v); err != nil {
 		return nil, nil, fmt.Errorf("msgpack decode: %w", err)
+	}
+	switch v.(type) {
+	case nil, *msgpackUnknown, msgpackUnknown:
+		return nil, nil, nil
 	}
 
 	mv, ok := v.(map[string]interface{})

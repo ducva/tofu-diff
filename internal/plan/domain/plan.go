@@ -86,7 +86,20 @@ func extractModuleAddress(addr string) string {
 	if secondLast < 0 {
 		return ""
 	}
-	return rest[:secondLast]
+	prefix := rest[:secondLast]
+	for _, mode := range []string{"data", "ephemeral"} {
+		if prefix == mode {
+			return ""
+		}
+		suffix := "." + mode
+		if strings.HasSuffix(prefix, suffix) {
+			cand := strings.TrimSuffix(prefix, suffix)
+			if cand != "module" && !strings.HasSuffix(cand, ".module") {
+				return cand
+			}
+		}
+	}
+	return prefix
 }
 
 // Plan is the normalized, immutable-by-convention aggregate returned by an
