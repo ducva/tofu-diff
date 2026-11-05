@@ -48,6 +48,16 @@ func TestResourceChangeModuleName(t *testing.T) {
 			rc:       ResourceChange{Address: "module.vpc[0].aws_subnet.public[1]"},
 			expected: "module.vpc[0]",
 		},
+		{
+			name:     "root data resource",
+			rc:       ResourceChange{Address: "data.aws_iam_policy_document.s3"},
+			expected: "(root)",
+		},
+		{
+			name:     "module data resource",
+			rc:       ResourceChange{Address: "module.vpc.data.aws_iam_policy_document.s3"},
+			expected: "module.vpc",
+		},
 	}
 
 	for _, tt := range tests {

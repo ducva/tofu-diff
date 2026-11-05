@@ -127,6 +127,24 @@ func TestParseAddress(t *testing.T) {
 			wantName:   "public",
 			wantModule: "module.vpc[0].module.sub",
 		},
+		{
+			addr:       "data.aws_iam_policy_document.s3",
+			wantType:   "aws_iam_policy_document",
+			wantName:   "s3",
+			wantModule: "",
+		},
+		{
+			addr:       "module.vpc.data.aws_iam_policy_document.s3",
+			wantType:   "aws_iam_policy_document",
+			wantName:   "s3",
+			wantModule: "module.vpc",
+		},
+		{
+			addr:       "module.vpc.ephemeral.random_password.this",
+			wantType:   "random_password",
+			wantName:   "this",
+			wantModule: "module.vpc",
+		},
 	}
 
 	for _, tt := range tests {
@@ -280,6 +298,46 @@ func TestLoadActionCode8Plan(t *testing.T) {
 	}
 	if forgetCount == 0 {
 		t.Fatalf("expected at least one resource with ActionForget, got 0")
+	}
+}
+
+func TestDecodeMsgpackAttrsNilAndUnknownRoot(t *testing.T) {
+	nilMp, err := msgpack.Marshal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attrs, unknowns, err := decodeMsgpackAttrs(nilMp)
+	if err != nil {
+		t.Fatalf("decodeMsgpackAttrs(nil) unexpected error: %v", err)
+	}
+	if attrs != nil || unknowns != nil {
+		t.Fatalf("decodeMsgpackAttrs(nil) = (%v, %v), want (nil, nil)", attrs, unknowns)
+	}
+
+	unkMp, err := msgpack.Marshal(&msgpackUnknown{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attrs, unknowns, err = decodeMsgpackAttrs(unkMp)
+	if err != nil {
+		t.Fatalf("decodeMsgpackAttrs(unknown) unexpected error: %v", err)
+	}
+	if attrs != nil || unknowns != nil {
+		t.Fatalf("decodeMsgpackAttrs(unknown) = (%v, %v), want (nil, nil)", attrs, unknowns)
+	}
+}
+
+func TestLoadTestPlan(t *testing.T) {
+	planPath := "../../../data/test.plan"
+	if _, err := os.Stat(planPath); os.IsNotExist(err) {
+		t.Skip("skipping test: data/test.plan not present")
+	}
+	plan, err := Load(planPath)
+	if err != nil {
+		t.Fatalf("failed to load test.plan: %v", err)
+	}
+	if len(plan.ResourceChanges) == 0 {
+		t.Fatalf("expected resource changes in test.plan, got 0")
 	}
 }
 
